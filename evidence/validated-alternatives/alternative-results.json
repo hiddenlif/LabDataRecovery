@@ -1,0 +1,50 @@
+{
+  "safe-later-direct": {
+    "11r3": {
+      "tests": 9,
+      "passed": 9,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    },
+    "11r4": {
+      "tests": 8,
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    }
+  },
+  "reverse-allocation": {
+    "11r3": {
+      "tests": 9,
+      "passed": 9,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    },
+    "11r4": {
+      "tests": 8,
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    }
+  },
+  "extra-audit": {
+    "11r3": {
+      "tests": 9,
+      "passed": 9,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    },
+    "11r4": {
+      "tests": 8,
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    }
+  }
+}

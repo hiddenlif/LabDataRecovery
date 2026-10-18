@@ -1,0 +1,121 @@
+# Corrected screening deliveries disagree with stored studies
+
+Operators report that corrected transfer deliveries sometimes reuse earlier evidence, waiting analyses disagree with their submission context, and exported reports omit distinct wells. The supplied incident database also contains studies that still disagree after the live workflow is corrected.
+
+Please investigate and repair the workflow, reconcile the retained evidence safely, and preserve historical results and review provenance. Provide useful regression tests and an executable migration report on a copy of the supplied database. Explain remaining blocked studies in RECOVERY-NOTES.md.
+# Runtime
+
+Run with Python and the installed dependencies: `PYTHONPATH=src python -m pytest`. The private checker invokes the documented CLI against independent evidence histories, including malformed and incomplete inputs. It checks observable behavior, preservation, backup, atomicity and repeat safety. No network is available during grading. Keep changes in this checkout; do not access authentication files.
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "truegate-workbench"
+version = "0.1.0"
+description = "Traceable scientific analysis and review for screening and assay studies"
+requires-python = ">=3.12"
+dependencies = ["numpy==2.5.2", "scipy==1.18.0"]
+
+[project.scripts]
+truegate = "truegate.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9,<10"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/truegate"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+src/truegate/counts.py
+src/truegate/reporting.py
+src/truegate/schema.py
+src/truegate/calibration.py
+src/truegate/repository.py
+src/truegate/codec.py
+src/truegate/errors.py
+src/truegate/curves.py
+src/truegate/examples.py
+src/truegate/ingest_resolution.py
+src/truegate/cli.py
+src/truegate/engine.py
+src/truegate/jobs.py
+src/truegate/transfer_history.py
+src/truegate/uncertainty.py
+src/truegate/plates.py
+src/truegate/screening.py
+src/truegate/__init__.py
+src/truegate/policy.py
+src/truegate/bridge.py
+src/truegate/database.py
+src/truegate/registry.py
+src/truegate/recovery.py
+src/truegate/units.py
+src/truegate/dispensing.py
+src/truegate/calibration_graph.py
+src/truegate/instrument_files.py
+src/truegate/ingestion.py
+src/truegate/stability.py
+NOTICE.md
+TASK_ENVIRONMENT.md
+scripts/demo_reports.py
+examples/bridge.json
+README.md
+ISSUE.md
+examples/correction-incident/identifiers.json
+examples/correction-incident/initial.json
+examples/correction-incident/corrected.json
+examples/correction-incident/README.md
+examples/correction-incident/study.db
+examples/correction-incident/reproduce.py
+examples/screening.json
+docs/instrument-profiles.json
+docs/recovery-ledger.md
+docs/correction-lifecycle.md
+docs/calibration-uncertainty.md
+docs/ingestion.md
+docs/analysis-jobs.md
+docs/campaign-identity.md
+docs/scientific-methods.md
+docs/transfer-history.md
+docs/data-formats.md
+docs/operations.md
+docs/architecture.md
+docs/evidence-recovery.md
+examples/recovery-incident/check_consistency.py
+examples/recovery-incident/README.md
+examples/recovery-incident/example.json
+examples/recovery-incident/study.db
+examples/recovery-incident/reproduce.py
+tests/test_uncertainty.py
+tests/test_ingestion.py
+tests/test_core.py
+tests/test_transfer_history.py
+tests/test_correction_lifecycle.py
+pyproject.toml
+Dockerfile
+uv.lock
+requirements.txt
+examples/transfer-history/initial.json
+examples/transfer-history/corrected.json
+examples/transfer-history/study-identifiers.json
+examples/transfer-history/manifest.json
+examples/transfer-history/README.md
+examples/transfer-history/readings.csv
+examples/transfer-history/history.json
+examples/transfer-history/study.db
+examples/transfer-history/reproduce.py
+examples/instrument-delivery/telemetry.csv
+examples/instrument-delivery/manifest.json
+examples/instrument-delivery/readings.csv
+examples/stability.json
+examples/transfer-history/historical-report/manifest.json
+examples/transfer-history/historical-report/snapshot.json
+examples/transfer-history/historical-report/index.html
+examples/transfer-history/historical-report/summary.csv
+examples/rare_events.json
+examples/calibration/dilution-errors.json
+examples/calibration/README.md
+examples/calibration/shared-stock.json

@@ -1,0 +1,13 @@
+{
+  "revision": "recovery-r4",
+  "attempts": 3,
+  "model": "gpt-6-astra",
+  "effort": "high",
+  "seconds_per_attempt": 1200,
+  "cycle": "A solver-observed execution result contradicts a semantic decision already implemented in a captured snapshot, followed by a repair to that decision. Incomplete implementation, proactive hardening, diagnostic wording and test-only corrections do not count.",
+  "triggers": ["live-only repair leaves persisted mismatches", "retained format decoding", "adopting and repinning prior partial recovery", "latest-publication current selection"],
+  "classification": ["hit and repaired", "preempted", "missed", "not reached", "uncertain"],
+  "ordering_regression": "Skewed display clocks are retained, but not counted as a primary difficulty trigger.",
+  "scope": "Independent fresh public-only attempts. No private feedback during solving. Freeze final and intermediate payloads; grade after exit. No target pass rate is imposed. Runtime and substantive cycles are separate outcomes.",
+  "authorization": "User: Okay so go what are you waiting around for. Continuation of the agreed r4 implementation and strong-solver pilot protocol."
+}

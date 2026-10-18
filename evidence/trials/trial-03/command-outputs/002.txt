@@ -1,0 +1,33 @@
+# Corrected screening deliveries disagree with stored studies
+
+Operators report that corrected transfer deliveries sometimes reuse earlier evidence, waiting analyses disagree with their submission context, and exported reports omit distinct wells. The supplied incident database also contains studies that still disagree after the live workflow is corrected.
+
+Please investigate and repair the workflow, reconcile the retained evidence safely, and preserve historical results and review provenance. Provide useful regression tests and an executable migration report on a copy of the supplied database. Explain remaining blocked studies in RECOVERY-NOTES.md.
+# Runtime
+
+Run with Python and the installed dependencies: `PYTHONPATH=src python -m pytest`. The private checker invokes the documented CLI against independent evidence histories, including malformed and incomplete inputs. It checks observable behavior, preservation, backup, atomicity and repeat safety. No network is available during grading. Keep changes in this checkout; do not access authentication files.
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "truegate-workbench"
+version = "0.1.0"
+description = "Traceable scientific analysis and review for screening and assay studies"
+requires-python = ">=3.12"
+dependencies = ["numpy==2.5.2", "scipy==1.18.0"]
+
+[project.scripts]
+truegate = "truegate.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9,<10"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/truegate"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+fatal: not a git repository (or any parent up to mount point /)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).

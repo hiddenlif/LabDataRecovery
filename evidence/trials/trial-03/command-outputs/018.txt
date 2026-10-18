@@ -1,0 +1,19 @@
+{
+  "statuses": {
+    "blocked": 10,
+    "recovered": 18,
+    "unaffected": 12
+  },
+  "appended_datasets": 20,
+  "session_mappings": 24,
+  "job_moves": 24,
+  "preserved_runs": 40,
+  "preserved_decisions": 40,
+  "preserved_job_attempts": 100,
+  "source_sha256": "bc4de222fc76eece5b91eb1a95ec7b4ee23d8de7e991bde5287a9ceea83f1a27",
+  "preservation_verified": true,
+  "repeat_verified": true,
+  "backup_verified": true,
+  "partial_diagnostic_violations": 0,
+  "partial_diagnostic_unresolved": 14
+}

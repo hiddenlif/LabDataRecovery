@@ -1,0 +1,11 @@
+{
+  "command_executed": true,
+  "non_root_application_image": true,
+  "network": "none",
+  "read_only_root": true,
+  "study_statuses": {
+    "blocked": 14,
+    "recoverable": 14,
+    "unaffected": 12
+  }
+}

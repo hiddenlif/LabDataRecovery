@@ -1,0 +1,211 @@
+4.7M	recovery-report
+16M	.pytest-tmp
+{
+  "scope": "Partial read-only consistency diagnostics; unresolved evidence requires review",
+  "unresolved": [
+    {
+      "campaign": "0a70e2995cec4829a4e30b94153521f6",
+      "error": "Original source bytes are missing: history"
+    },
+    {
+      "campaign": "115de33b245042faa8ee3bd3ddb289bd",
+      "error": "Ambiguous submission context"
+    },
+    {
+      "campaign": "15f5deb2226b47b0b55dc3e4a058c53a",
+      "error": "Later direct input requires review"
+    },
+    {
+      "campaign": "18777fb11c3f4161ad5b9b159867dde8",
+      "error": "Original source bytes are missing: history"
+    },
+    {
+      "campaign": "259c706e496b477788c07d033e47b317",
+      "error": "Stored source no longer parses: history: Unsupported transfer codec: transfer-history/unknown"
+    },
+    {
+      "campaign": "2643d33eda734489978e11b6f1831487",
+      "error": "Later direct input requires review"
+    },
+    {
+      "campaign": "6c9b34b96363425cb44be867950c6957",
+      "error": "Original source bytes are missing: history"
+    },
+    {
+      "campaign": "88c454cf4e314193922389580cd44766",
+      "error": "Ambiguous submission context"
+    },
+    {
+      "campaign": "a9955757c327403da641a2676f574141",
+      "error": "Later direct input requires review"
+    },
+    {
+      "campaign": "a9f225a576ce44bdad197d5d2c05fb51",
+      "error": "Original source bytes are missing: history"
+    },
+    {
+      "campaign": "b72b611d310c4e5a953fed8cc6b7a326",
+      "error": "Ambiguous submission context"
+    },
+    {
+      "campaign": "c332a63b5ecf4a64a60413f565064522",
+      "error": "Later direct input requires review"
+    },
+    {
+      "campaign": "e3f589589e8d4a53af162c3b8d5409b0",
+      "error": "Stored source no longer parses: history: Unsupported transfer codec: transfer-history/unknown"
+    },
+    {
+      "campaign": "f082fa4fc4844a3ebff5d737204dbfc1",
+      "error": "Ambiguous submission context"
+    }
+  ],
+  "violations": []
+}
+
+def get_campaign(db, campaign):
+    row = db.execute("SELECT * FROM campaigns WHERE id=?", (campaign,)).fetchone()
+    if row is None:
+        raise WorkbenchError("Unknown campaign")
+    return row
+
+
+def latest_dataset(db, campaign):
+    # Recovery can append older evidence after a newer ordinary publication.
+    # Journal order determines current evidence; revision remains an allocation token.
+    for entry in db.execute("SELECT action,payload FROM events WHERE campaign=? AND action IN ('imported','transfer_evidence_recovered_v1') ORDER BY id DESC", (campaign,)):
+        payload = loads(entry["payload"])
+        identifier = payload.get("current_dataset") if entry["action"] == 'transfer_evidence_recovered_v1' else payload.get("dataset")
+        if identifier is not None:
+            row = db.execute("SELECT * FROM datasets WHERE id=? AND campaign=?", (identifier, campaign)).fetchone()
+            if row is None:
+                raise Conflict("Current dataset journal link is absent")
+            return row
+    row = db.execute("SELECT * FROM datasets WHERE campaign=? ORDER BY revision DESC LIMIT 1", (campaign,)).fetchone()
+    if row is None:
+        raise WorkbenchError("Campaign has no dataset")
+    return row
+
+
+def revision_token(db, campaign):
+    return db.execute("SELECT COALESCE(MAX(revision),0) FROM datasets WHERE campaign=?", (campaign,)).fetchone()[0]
+
+
+def store_dataset(db, campaign, data):
+    from .registry import normalize_input
+    validate(normalize_input(data))
+    sha = digest(data)
+    study = get_campaign(db, campaign)
+    if study["kind"] != data["kind"]:
+        raise WorkbenchError("Dataset kind differs from campaign")
+    allocated = revision_token(db, campaign)
+    latest = latest_dataset(db, campaign) if allocated else None
+    if latest and latest["sha"] == sha:
+        return {"dataset": latest["id"], "revision": latest["revision"], "sha256": latest["sha"], "reused": True}
+    revision = allocated + 1
+    identifier = uuid.uuid4().hex
+    db.execute("INSERT INTO datasets VALUES (?,?,?,?,?,?)", (identifier, campaign, revision, sha, dumps(data), now()))
+    event(db, campaign, "imported", {"dataset": identifier, "revision": revision, "sha256": sha})
+    return {"dataset": identifier, "revision": revision, "sha256": sha, "reused": False}
+
+
+class Repository:
+    def __init__(self, path):
+        self.path = str(path)
+        initialize(self.path)
+
+    def create(self, name, kind):
+        name = text(name, "campaign name")
+        if kind not in KINDS:
+            raise WorkbenchError("Unknown study kind")
+        campaign = uuid.uuid4().hex
+        with transaction(self.path) as db:
+            db.execute("INSERT INTO campaigns VALUES (?,?,?,?)", (campaign, name, kind, now()))
+            event(db, campaign, "created", {"kind": kind})
+        return {"campaign": campaign, "name": name, "kind": kind}
+
+    def import_data(self, campaign, data):
+        with transaction(self.path) as db:
+            return store_dataset(db, campaign, data)
+
+    def run(self, campaign, policy=None):
+        with transaction(self.path) as db:
+            study = get_campaign(db, campaign)
+            dataset = latest_dataset(db, campaign)
+            settings = resolve(study["kind"], policy)
+    provenance = {e['payload']['dataset'] for e in journal if e['action'] == 'imported'}
+    for e in journal:
+        if e['action'] == 'imported':
+            row = dataset(e['payload']['dataset'])
+            require(e['payload'].get('sha256') == row['sha'] and e['payload'].get('revision') == row['revision'],
+                    'Import journal disagrees with stored dataset')
+        if e['action'] not in (PREVIEW, ACTION):
+            continue
+        payload = e['payload']
+        require(payload.get('version') == ('transfer-evidence-preview-0' if e['action'] == PREVIEW else VERSION),
+                'Unsupported recovery ledger version')
+        require(isinstance(payload.get('sessions'), list) and isinstance(payload.get('jobs'), list),
+                'Recovery mappings must be arrays')
+        seen_sessions, seen_jobs = set(), set()
+        for move in payload['sessions']:
+            require(move['session'] not in seen_sessions, 'Duplicate recovery session mapping')
+            seen_sessions.add(move['session'])
+            sid = move['session']
+            require(sid in sessions and pub_by_session[sid]['id'] < e['id'], 'Recovery ledger names an unpublished session')
+            previous = session_moves.get(sid, pub_by_session[sid]['payload']['dataset'])
+            require(move['from_dataset'] in (previous, pub_by_session[sid]['payload']['dataset']),
+                    'Recovery session provenance does not match publication')
+            target = dataset(move['to_dataset'])
+            require(target['sha'] == move['sha256'] == digest(contents[sid]), 'Recovery ledger content does not match retained delivery')
+            session_moves[sid] = target['id']
+            provenance.add(target['id'])
+        for move in payload['jobs']:
+            require(move['job'] not in seen_jobs, 'Duplicate recovery job mapping')
+            seen_jobs.add(move['job'])
+            if e['action'] == PREVIEW:
+                require(move['to_dataset'] in {m['to_dataset'] for m in payload['sessions']},
+                        'Preview job target does not belong to its recovered sessions')
+            job_moves.setdefault(move['job'], []).append((e['id'], move))
+
+    for sid, session in sessions.items():
+        original = pub_by_session[sid]['payload']['dataset']
+        require(session['published_dataset'] in (original, session_moves.get(sid, original)),
+                'Publication pointer changed without matching recovery provenance: ' + sid)
+
+    # Reuse verifiable partial recovery revisions, never a merely similar projection.
+    allocated = max((r['revision'] for r in datasets.values()), default=0)
+    targets, new_rows = {}, []
+    for publication in publications:
+        sid = publication['payload']['session']
+        session, content = sessions[sid], contents[sid]
+        sha = digest(content)
+        preferred = session_moves.get(sid, session['published_dataset'])
+        if dataset(preferred)['sha'] == sha:
+            target = dataset(preferred)
+        else:
+            candidates = [r for r in datasets.values() if r['sha'] == sha and r['id'] in provenance]
+            require(len(candidates) <= 1, 'Multiple matching dataset revisions have ambiguous provenance: ' + sid)
+            if candidates:
+                target = candidates[0]
+            else:
+                allocated += 1
+                identifier = uuid.uuid5(uuid.NAMESPACE_URL, dumps([VERSION, cid, sid, sha])).hex
+                require(not db.execute('SELECT 1 FROM datasets WHERE id=?', (identifier,)).fetchone(), 'Recovery dataset ID collision')
+                target = dict(id=identifier, revision=allocated, sha=sha, content=dumps(content))
+                new_rows.append(target)
+        targets[sid] = target['id']
+        if session['published_dataset'] != target['id']:
+            entry['sessions'].append(dict(session=sid, from_dataset=session['published_dataset'],
+                                          to_dataset=target['id'], revision=target['revision'], sha256=sha))
+
+    # Replay only durable publication order, never timestamps or revision order.
+    current, original_current = None, None
+    submissions = {}
+    for record in journal:
+        action, payload = record['action'], record['payload']
+        if action == 'imported':
+            current = original_current = payload['dataset']
+        elif action == 'ingest_published':
+            current = targets[payload['session']]
+            original_current = payload['dataset']
+        elif action == ACTION and payload.get('current_dataset'):

@@ -1,0 +1,85 @@
+src/truegate/counts.py
+src/truegate/reporting.py
+src/truegate/schema.py
+src/truegate/calibration.py
+src/truegate/repository.py
+src/truegate/codec.py
+src/truegate/errors.py
+src/truegate/curves.py
+src/truegate/examples.py
+src/truegate/ingest_resolution.py
+src/truegate/cli.py
+src/truegate/engine.py
+src/truegate/jobs.py
+src/truegate/transfer_history.py
+src/truegate/uncertainty.py
+src/truegate/plates.py
+src/truegate/screening.py
+src/truegate/__init__.py
+src/truegate/policy.py
+src/truegate/bridge.py
+src/truegate/database.py
+src/truegate/registry.py
+src/truegate/recovery.py
+src/truegate/units.py
+src/truegate/dispensing.py
+src/truegate/calibration_graph.py
+src/truegate/instrument_files.py
+src/truegate/ingestion.py
+src/truegate/stability.py
+NOTICE.md
+TASK_ENVIRONMENT.md
+scripts/demo_reports.py
+tests/test_uncertainty.py
+tests/test_ingestion.py
+tests/test_core.py
+tests/test_transfer_history.py
+tests/test_correction_lifecycle.py
+pyproject.toml
+Dockerfile
+requirements.txt
+ISSUE.md
+docs/recovery-ledger.md
+docs/correction-lifecycle.md
+docs/calibration-uncertainty.md
+docs/ingestion.md
+docs/analysis-jobs.md
+docs/campaign-identity.md
+docs/scientific-methods.md
+docs/transfer-history.md
+docs/data-formats.md
+docs/operations.md
+docs/architecture.md
+docs/evidence-recovery.md
+examples/correction-incident/README.md
+examples/correction-incident/reproduce.py
+examples/recovery-incident/check_consistency.py
+examples/recovery-incident/README.md
+examples/recovery-incident/reproduce.py
+examples/transfer-history/README.md
+examples/transfer-history/readings.csv
+examples/transfer-history/reproduce.py
+examples/transfer-history/historical-report/index.html
+examples/transfer-history/historical-report/summary.csv
+examples/instrument-delivery/telemetry.csv
+examples/instrument-delivery/readings.csv
+README.md
+examples/calibration/README.md
+total 92
+drwxr-xr-x 17  501 dialout   544 Oct 18 20:45 .
+drwxr-xr-x  1 root root     4096 Oct 18 20:55 ..
+-rw-r--r--  1  501 dialout    62 Oct 17 22:11 .dockerignore
+-rw-r--r--  1  501 dialout   205 Oct 18 19:46 .gitignore
+-rw-r--r--  1  501 dialout   553 Oct 17 22:11 Dockerfile
+-rw-r--r--  1  501 dialout   658 Oct 18 20:45 ISSUE.md
+-rw-r--r--  1  501 dialout   781 Oct 17 22:16 NOTICE.md
+-rw-r--r--  1  501 dialout  4609 Oct 18 19:46 README.md
+-rw-r--r--  1  501 dialout   413 Oct 18 20:45 TASK_ENVIRONMENT.md
+drwxr-xr-x 15  501 dialout   480 Oct 18 20:45 docs
+drwxr-xr-x 11  501 dialout   352 Oct 18 19:44 examples
+-rw-r--r--  1  501 dialout   512 Oct 17 22:02 pyproject.toml
+-rw-r--r--  1  501 dialout  9396 Oct 17 22:10 requirements.txt
+drwxr-xr-x  3  501 dialout    96 Oct 17 22:11 scripts
+drwxr-xr-x  3  501 dialout    96 Oct 17 21:54 src
+drwxr-xr-x  7  501 dialout   224 Oct 18 19:56 tests
+-rw-r--r--  1  501 dialout 38785 Oct 17 22:02 uv.lock

@@ -1,0 +1,1257 @@
+{
+  "transfer-history/1": {
+    "binding_sequence": "next operation boundary, exclusive; canonical snapshot sequence is boundary minus one"
+  },
+  "transfer-history/2": {
+    "binding_sequence": "completed operation boundary, inclusive"
+  },
+  "default": "transfer-history/2",
+  "selection": "source descriptor codec; preserve original bytes and manifest; normalized histories use inclusive snapshots"
+}
+"""Strict, stable interchange. Hashes bind content, not file formatting."""
+import hashlib
+import json
+import math
+from pathlib import Path
+from .errors import WorkbenchError
+
+
+def _pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise WorkbenchError(f"Duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def loads(text):
+    def invalid(value):
+        raise WorkbenchError(f"Non-finite JSON constant: {value}")
+    try:
+        return json.loads(text, object_pairs_hook=_pairs, parse_constant=invalid)
+    except (json.JSONDecodeError, UnicodeError) as exc:
+        raise WorkbenchError(f"Invalid JSON: {exc}") from exc
+
+
+def load(path):
+    p = Path(path)
+    if p.stat().st_size > 20 * 1024 * 1024:
+        raise WorkbenchError("Input exceeds 20 MiB")
+    return loads(p.read_text(encoding="utf-8-sig"))
+
+
+def dumps(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def digest(value):
+    return hashlib.sha256(dumps(value).encode()).hexdigest()
+
+
+def number(value, label, minimum=None, maximum=None):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise WorkbenchError(f"{label} must be numeric")
+    if not math.isfinite(value):
+        raise WorkbenchError(f"{label} must be finite")
+    if minimum is not None and value < minimum:
+        raise WorkbenchError(f"{label} must be >= {minimum}")
+    if maximum is not None and value > maximum:
+        raise WorkbenchError(f"{label} must be <= {maximum}")
+    return float(value)
+
+
+def integer(value, label, minimum=0):
+    number(value, label, minimum)
+    if int(value) != value:
+        raise WorkbenchError(f"{label} must be an integer")
+    return int(value)
+
+
+def text(value, label):
+    if not isinstance(value, str) or not value.strip() or len(value) > 200:
+        raise WorkbenchError(f"{label} must be nonempty text of at most 200 characters")
+    return value.strip()
+
+
+def require(obj, keys, label):
+    if not isinstance(obj, dict):
+        raise WorkbenchError(f"{label} must be an object")
+    missing = set(keys) - obj.keys()
+    if missing:
+        raise WorkbenchError(f"{label} missing {', '.join(sorted(missing))}")
+
+
+STUDY {'id': '0a70e2995cec4829a4e30b94153521f6', 'name': 'Screening study 7118', 'kind': 'screening', 'created': '2026-10-18T20:49:34.404141+00:00'}
+datasets
+{'id': '05c28438c60d4421bedf6018d61aeabc', 'revision': 1, 'sha': '418f9667b8c57d7c50315c1766130ce72168c656a0197326b17552e5d437068e'}
+ingest_sessions
+{'id': '0ec6d962246e47cd950493a6b607b04a', 'delivery_key': 'delivery-0', 'published_dataset': '05c28438c60d4421bedf6018d61aeabc'}
+{'id': 'd7d3da2698994276bd71e31a2a76e7e1', 'delivery_key': 'delivery-1', 'published_dataset': '05c28438c60d4421bedf6018d61aeabc'}
+jobs
+{'id': 'c08045b479634e5fa4550162eba68aac', 'dataset': '05c28438c60d4421bedf6018d61aeabc', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': 'a49e6b20ec194decadf841c25cee7f74', 'dataset': '05c28438c60d4421bedf6018d61aeabc', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'a0928b209d33412aa945f87e4b55f8f1', 'dataset': '05c28438c60d4421bedf6018d61aeabc', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '2befbe56dad640979c1ab878b3ab33c9', 'dataset': '05c28438c60d4421bedf6018d61aeabc', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'c53fa1de5abe4a2892a3866bcf86e4e7', 'dataset': '05c28438c60d4421bedf6018d61aeabc', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 292, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 293, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"e19b666643454e5c9d79ae8dfaee7e334880231025fbf75bc01f11124f60dc39","session":"0ec6d962246e47cd950493a6b607b04a"}'}
+{'id': 294, 'action': 'imported', 'payload': '{"dataset":"05c28438c60d4421bedf6018d61aeabc","revision":1,"sha256":"418f9667b8c57d7c50315c1766130ce72168c656a0197326b17552e5d437068e"}'}
+{'id': 295, 'action': 'ingest_published', 'payload': '{"dataset":"05c28438c60d4421bedf6018d61aeabc","session":"0ec6d962246e47cd950493a6b607b04a"}'}
+{'id': 296, 'action': 'job_submitted', 'payload': '{"dataset":"05c28438c60d4421bedf6018d61aeabc","job":"c08045b479634e5fa4550162eba68aac"}'}
+{'id': 297, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"c08045b479634e5fa4550162eba68aac","worker":"fixture-completed"}'}
+{'id': 298, 'action': 'job_published', 'payload': '{"generation":1,"job":"c08045b479634e5fa4550162eba68aac","run":"0ac53bb45a304575b6e19983b8fbd600"}'}
+{'id': 299, 'action': 'reviewed', 'payload': '{"action":"accept","decision":19,"run":"0ac53bb45a304575b6e19983b8fbd600"}'}
+{'id': 300, 'action': 'job_submitted', 'payload': '{"dataset":"05c28438c60d4421bedf6018d61aeabc","job":"a0928b209d33412aa945f87e4b55f8f1"}'}
+{'id': 301, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"a0928b209d33412aa945f87e4b55f8f1","worker":"fixture-staged"}'}
+{'id': 302, 'action': 'job_submitted', 'payload': '{"dataset":"05c28438c60d4421bedf6018d61aeabc","job":"a49e6b20ec194decadf841c25cee7f74"}'}
+{'id': 303, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"a70677419f7c3deeb189301a7650ccfc11060ddea466efde0cafd552943b06a5","session":"d7d3da2698994276bd71e31a2a76e7e1"}'}
+{'id': 304, 'action': 'ingest_published', 'payload': '{"dataset":"05c28438c60d4421bedf6018d61aeabc","session":"d7d3da2698994276bd71e31a2a76e7e1"}'}
+{'id': 305, 'action': 'job_submitted', 'payload': '{"dataset":"05c28438c60d4421bedf6018d61aeabc","job":"c53fa1de5abe4a2892a3866bcf86e4e7"}'}
+{'id': 306, 'action': 'job_submitted', 'payload': '{"dataset":"05c28438c60d4421bedf6018d61aeabc","job":"2befbe56dad640979c1ab878b3ab33c9"}'}
+{'id': 307, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"2befbe56dad640979c1ab878b3ab33c9","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '115de33b245042faa8ee3bd3ddb289bd', 'name': 'Screening study 7109', 'kind': 'screening', 'created': '2026-10-18T20:49:34.264436+00:00'}
+datasets
+{'id': 'b22ff5a618434528a4bb563571273db4', 'revision': 1, 'sha': '3ec9d0ee0373eaa4579709ff208be113aba8e9636a4153e8ea485d4f9eee6da8'}
+ingest_sessions
+{'id': 'de5003b9e5114b2f9269549d84ccc957', 'delivery_key': 'delivery-0', 'published_dataset': 'b22ff5a618434528a4bb563571273db4'}
+{'id': '47d0d1b3c5444aa0b1014e8b94484c66', 'delivery_key': 'delivery-1', 'published_dataset': 'b22ff5a618434528a4bb563571273db4'}
+jobs
+{'id': '5ddbed495511470e8ae9b664e8a24d62', 'dataset': 'b22ff5a618434528a4bb563571273db4', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '2e541f14270c44029f11041834018231', 'dataset': 'b22ff5a618434528a4bb563571273db4', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'ef642550852349fd9109a5e018215d05', 'dataset': 'b22ff5a618434528a4bb563571273db4', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '4bbcc09d341645f88305b23472c28d76', 'dataset': 'b22ff5a618434528a4bb563571273db4', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '20650986a07c4e9e93794377e3aa0d84', 'dataset': 'b22ff5a618434528a4bb563571273db4', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 139, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 140, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"827e08e450eccd7683662a1c96dfa30045256be1fbd12cf3a628e84969a03c49","session":"de5003b9e5114b2f9269549d84ccc957"}'}
+{'id': 141, 'action': 'imported', 'payload': '{"dataset":"b22ff5a618434528a4bb563571273db4","revision":1,"sha256":"3ec9d0ee0373eaa4579709ff208be113aba8e9636a4153e8ea485d4f9eee6da8"}'}
+{'id': 142, 'action': 'ingest_published', 'payload': '{"dataset":"b22ff5a618434528a4bb563571273db4","session":"de5003b9e5114b2f9269549d84ccc957"}'}
+{'id': 143, 'action': 'job_submitted', 'payload': '{"dataset":"b22ff5a618434528a4bb563571273db4","job":"5ddbed495511470e8ae9b664e8a24d62"}'}
+{'id': 144, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"5ddbed495511470e8ae9b664e8a24d62","worker":"fixture-completed"}'}
+{'id': 145, 'action': 'job_published', 'payload': '{"generation":1,"job":"5ddbed495511470e8ae9b664e8a24d62","run":"7e839e83abab4724a4fcb1437ad955c0"}'}
+{'id': 146, 'action': 'reviewed', 'payload': '{"action":"accept","decision":10,"run":"7e839e83abab4724a4fcb1437ad955c0"}'}
+{'id': 147, 'action': 'job_submitted', 'payload': '{"dataset":"b22ff5a618434528a4bb563571273db4","job":"ef642550852349fd9109a5e018215d05"}'}
+{'id': 148, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"ef642550852349fd9109a5e018215d05","worker":"fixture-staged"}'}
+{'id': 149, 'action': 'job_submitted', 'payload': '{"dataset":"b22ff5a618434528a4bb563571273db4","job":"2e541f14270c44029f11041834018231"}'}
+{'id': 150, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"1142392a70bcafe9e20d6679b05e1d2acaa32461c3b8620583f95b8ff28b1a7c","session":"47d0d1b3c5444aa0b1014e8b94484c66"}'}
+{'id': 151, 'action': 'ingest_published', 'payload': '{"dataset":"b22ff5a618434528a4bb563571273db4","session":"47d0d1b3c5444aa0b1014e8b94484c66"}'}
+{'id': 153, 'action': 'job_submitted', 'payload': '{"dataset":"b22ff5a618434528a4bb563571273db4","job":"4bbcc09d341645f88305b23472c28d76"}'}
+{'id': 154, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"4bbcc09d341645f88305b23472c28d76","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '15f5deb2226b47b0b55dc3e4a058c53a', 'name': 'Screening study 7110', 'kind': 'screening', 'created': '2026-10-18T20:49:34.280191+00:00'}
+datasets
+{'id': '532b7693f9aa4aa292ed96f6d553c573', 'revision': 1, 'sha': 'b29ae2575d9a4a414c779510a4d3f0c8d9361d895019cfcd6e9c3e8dd5d8bb8c'}
+{'id': 'd089b1321bdc46b0aa1342d0e756a1fe', 'revision': 2, 'sha': 'f7d3aeb06b16009e54edd3b075a06266177dfd2882523408038fcd2cfa18d995'}
+ingest_sessions
+{'id': '40c5a6c59c7e40ea87589ad14d3c6bd8', 'delivery_key': 'delivery-0', 'published_dataset': '532b7693f9aa4aa292ed96f6d553c573'}
+{'id': '36401a4c3118405e9d7b69ed81358ab3', 'delivery_key': 'delivery-1', 'published_dataset': '532b7693f9aa4aa292ed96f6d553c573'}
+jobs
+{'id': 'e1e0c8c8633b43cd9121615de9a6f44c', 'dataset': '532b7693f9aa4aa292ed96f6d553c573', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '7ce12f9719954147ba85bb866e8928c4', 'dataset': '532b7693f9aa4aa292ed96f6d553c573', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '6eed71d1ae9d45a1adca1756033ff39d', 'dataset': '532b7693f9aa4aa292ed96f6d553c573', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '34c217e2aed74c70825e2c0068f9802a', 'dataset': '532b7693f9aa4aa292ed96f6d553c573', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '1222c4876bde427195efcc995908c9bd', 'dataset': '532b7693f9aa4aa292ed96f6d553c573', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 155, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 156, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"b4fed200fcf260ffba1cf9d13b20041f77ee0458d65fd4f6668e1e1865d64349","session":"40c5a6c59c7e40ea87589ad14d3c6bd8"}'}
+{'id': 157, 'action': 'imported', 'payload': '{"dataset":"532b7693f9aa4aa292ed96f6d553c573","revision":1,"sha256":"b29ae2575d9a4a414c779510a4d3f0c8d9361d895019cfcd6e9c3e8dd5d8bb8c"}'}
+{'id': 158, 'action': 'ingest_published', 'payload': '{"dataset":"532b7693f9aa4aa292ed96f6d553c573","session":"40c5a6c59c7e40ea87589ad14d3c6bd8"}'}
+{'id': 159, 'action': 'job_submitted', 'payload': '{"dataset":"532b7693f9aa4aa292ed96f6d553c573","job":"e1e0c8c8633b43cd9121615de9a6f44c"}'}
+{'id': 160, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"e1e0c8c8633b43cd9121615de9a6f44c","worker":"fixture-completed"}'}
+{'id': 161, 'action': 'job_published', 'payload': '{"generation":1,"job":"e1e0c8c8633b43cd9121615de9a6f44c","run":"2307b9e96887412fadbb80fa88229567"}'}
+{'id': 162, 'action': 'reviewed', 'payload': '{"action":"accept","decision":11,"run":"2307b9e96887412fadbb80fa88229567"}'}
+{'id': 163, 'action': 'job_submitted', 'payload': '{"dataset":"532b7693f9aa4aa292ed96f6d553c573","job":"6eed71d1ae9d45a1adca1756033ff39d"}'}
+{'id': 164, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"6eed71d1ae9d45a1adca1756033ff39d","worker":"fixture-staged"}'}
+{'id': 165, 'action': 'job_submitted', 'payload': '{"dataset":"532b7693f9aa4aa292ed96f6d553c573","job":"7ce12f9719954147ba85bb866e8928c4"}'}
+{'id': 166, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"c06ad311acd54dff3409c9a9dadee62429b16ce198020e51699950dfeb58a9a1","session":"36401a4c3118405e9d7b69ed81358ab3"}'}
+{'id': 167, 'action': 'ingest_published', 'payload': '{"dataset":"532b7693f9aa4aa292ed96f6d553c573","session":"36401a4c3118405e9d7b69ed81358ab3"}'}
+{'id': 168, 'action': 'job_submitted', 'payload': '{"dataset":"532b7693f9aa4aa292ed96f6d553c573","job":"1222c4876bde427195efcc995908c9bd"}'}
+{'id': 169, 'action': 'job_submitted', 'payload': '{"dataset":"532b7693f9aa4aa292ed96f6d553c573","job":"34c217e2aed74c70825e2c0068f9802a"}'}
+{'id': 170, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"34c217e2aed74c70825e2c0068f9802a","worker":"fixture-staged-after"}'}
+{'id': 171, 'action': 'imported', 'payload': '{"dataset":"d089b1321bdc46b0aa1342d0e756a1fe","revision":2,"sha256":"f7d3aeb06b16009e54edd3b075a06266177dfd2882523408038fcd2cfa18d995"}'}
+
+STUDY {'id': '18777fb11c3f4161ad5b9b159867dde8', 'name': 'Screening study 7102', 'kind': 'screening', 'created': '2026-10-18T20:49:34.141820+00:00'}
+datasets
+{'id': '4ef1ab8431d946c481ccf57ff06bb4f5', 'revision': 1, 'sha': '27d7cc962384d8e2118ab68f430a1c451f2c1f6808ec3a67917051accd58fc18'}
+ingest_sessions
+{'id': '9a9e9d086ddc44a9b90316179cfa743b', 'delivery_key': 'delivery-0', 'published_dataset': '4ef1ab8431d946c481ccf57ff06bb4f5'}
+{'id': 'f6e98a0f441f4008a2151a68641ba7d5', 'delivery_key': 'delivery-1', 'published_dataset': '4ef1ab8431d946c481ccf57ff06bb4f5'}
+jobs
+{'id': 'c17cb917651647eeb2f0b97fb0aa6131', 'dataset': '4ef1ab8431d946c481ccf57ff06bb4f5', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '3da7b4499e674e69b266e46896f6f56e', 'dataset': '4ef1ab8431d946c481ccf57ff06bb4f5', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '18e7138b017e438a879021228fdd3ff4', 'dataset': '4ef1ab8431d946c481ccf57ff06bb4f5', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'b1538461ebe44b689ef1c90511cad915', 'dataset': '4ef1ab8431d946c481ccf57ff06bb4f5', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '587893cb9e78440a9333520c5f37cb8f', 'dataset': '4ef1ab8431d946c481ccf57ff06bb4f5', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 34, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 35, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"209764f08ecc83663c5ed8803260715aefb6400d4e1c65b30662b6b60dfbac01","session":"9a9e9d086ddc44a9b90316179cfa743b"}'}
+{'id': 36, 'action': 'imported', 'payload': '{"dataset":"4ef1ab8431d946c481ccf57ff06bb4f5","revision":1,"sha256":"27d7cc962384d8e2118ab68f430a1c451f2c1f6808ec3a67917051accd58fc18"}'}
+{'id': 37, 'action': 'ingest_published', 'payload': '{"dataset":"4ef1ab8431d946c481ccf57ff06bb4f5","session":"9a9e9d086ddc44a9b90316179cfa743b"}'}
+{'id': 38, 'action': 'job_submitted', 'payload': '{"dataset":"4ef1ab8431d946c481ccf57ff06bb4f5","job":"c17cb917651647eeb2f0b97fb0aa6131"}'}
+{'id': 39, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"c17cb917651647eeb2f0b97fb0aa6131","worker":"fixture-completed"}'}
+{'id': 40, 'action': 'job_published', 'payload': '{"generation":1,"job":"c17cb917651647eeb2f0b97fb0aa6131","run":"dd72c1a0781f43b499334ed4fdc61ba1"}'}
+{'id': 41, 'action': 'reviewed', 'payload': '{"action":"accept","decision":3,"run":"dd72c1a0781f43b499334ed4fdc61ba1"}'}
+{'id': 42, 'action': 'job_submitted', 'payload': '{"dataset":"4ef1ab8431d946c481ccf57ff06bb4f5","job":"18e7138b017e438a879021228fdd3ff4"}'}
+{'id': 43, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"18e7138b017e438a879021228fdd3ff4","worker":"fixture-staged"}'}
+{'id': 44, 'action': 'job_submitted', 'payload': '{"dataset":"4ef1ab8431d946c481ccf57ff06bb4f5","job":"3da7b4499e674e69b266e46896f6f56e"}'}
+{'id': 45, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"5948d5d22456e3a8ee3607029fde8dc9c8ed5957fb7e742c64cce0539668cb98","session":"f6e98a0f441f4008a2151a68641ba7d5"}'}
+{'id': 46, 'action': 'ingest_published', 'payload': '{"dataset":"4ef1ab8431d946c481ccf57ff06bb4f5","session":"f6e98a0f441f4008a2151a68641ba7d5"}'}
+{'id': 47, 'action': 'job_submitted', 'payload': '{"dataset":"4ef1ab8431d946c481ccf57ff06bb4f5","job":"587893cb9e78440a9333520c5f37cb8f"}'}
+{'id': 48, 'action': 'job_submitted', 'payload': '{"dataset":"4ef1ab8431d946c481ccf57ff06bb4f5","job":"b1538461ebe44b689ef1c90511cad915"}'}
+{'id': 49, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"b1538461ebe44b689ef1c90511cad915","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '198e2abd9a704efa91bb6b430f4d4f40', 'name': 'Screening study 7130', 'kind': 'screening', 'created': '2026-10-18T20:49:34.569002+00:00'}
+datasets
+{'id': '3c14d04b5b41425faa31d2170d4d6a5f', 'revision': 1, 'sha': 'a56ac2645c0d628cc3a43875db410df07efc972e2da5321a6fb5bf4314db80f9'}
+ingest_sessions
+{'id': '3cb657520d064bc789f6dfd3a43c36a4', 'delivery_key': 'delivery-0', 'published_dataset': '3c14d04b5b41425faa31d2170d4d6a5f'}
+{'id': 'efb45933d69d49568e881ccef52079de', 'delivery_key': 'delivery-1', 'published_dataset': '3c14d04b5b41425faa31d2170d4d6a5f'}
+jobs
+{'id': '4ad80e605b2e4f83bf4518d9ed37d67b', 'dataset': '3c14d04b5b41425faa31d2170d4d6a5f', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '6a93cde9952e4db99afa15b68a2c92df', 'dataset': '3c14d04b5b41425faa31d2170d4d6a5f', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'ae314718a8854b22886853fa13b8d2ab', 'dataset': '3c14d04b5b41425faa31d2170d4d6a5f', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'e050c850286f4d1a95e634c7863e8fa2', 'dataset': '3c14d04b5b41425faa31d2170d4d6a5f', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '8ad3e9c6c972418397daa3655b2ad1fe', 'dataset': '3c14d04b5b41425faa31d2170d4d6a5f', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 460, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 461, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"d93a33e2579aed14089407fae84e900ba69f74578f3e21185be2db0907754462","session":"3cb657520d064bc789f6dfd3a43c36a4"}'}
+{'id': 462, 'action': 'imported', 'payload': '{"dataset":"3c14d04b5b41425faa31d2170d4d6a5f","revision":1,"sha256":"a56ac2645c0d628cc3a43875db410df07efc972e2da5321a6fb5bf4314db80f9"}'}
+{'id': 463, 'action': 'ingest_published', 'payload': '{"dataset":"3c14d04b5b41425faa31d2170d4d6a5f","session":"3cb657520d064bc789f6dfd3a43c36a4"}'}
+{'id': 464, 'action': 'job_submitted', 'payload': '{"dataset":"3c14d04b5b41425faa31d2170d4d6a5f","job":"4ad80e605b2e4f83bf4518d9ed37d67b"}'}
+{'id': 465, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"4ad80e605b2e4f83bf4518d9ed37d67b","worker":"fixture-completed"}'}
+{'id': 466, 'action': 'job_published', 'payload': '{"generation":1,"job":"4ad80e605b2e4f83bf4518d9ed37d67b","run":"5b4d4fe342c14beb9089227853377893"}'}
+{'id': 467, 'action': 'reviewed', 'payload': '{"action":"accept","decision":31,"run":"5b4d4fe342c14beb9089227853377893"}'}
+{'id': 468, 'action': 'job_submitted', 'payload': '{"dataset":"3c14d04b5b41425faa31d2170d4d6a5f","job":"ae314718a8854b22886853fa13b8d2ab"}'}
+{'id': 469, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"ae314718a8854b22886853fa13b8d2ab","worker":"fixture-staged"}'}
+{'id': 470, 'action': 'job_submitted', 'payload': '{"dataset":"3c14d04b5b41425faa31d2170d4d6a5f","job":"6a93cde9952e4db99afa15b68a2c92df"}'}
+{'id': 471, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"d1b963545a41394f4656ef195d3b7ff913a50b702d5e0427ce6d0a028f601418","session":"efb45933d69d49568e881ccef52079de"}'}
+{'id': 472, 'action': 'ingest_published', 'payload': '{"dataset":"3c14d04b5b41425faa31d2170d4d6a5f","session":"efb45933d69d49568e881ccef52079de"}'}
+{'id': 473, 'action': 'job_submitted', 'payload': '{"dataset":"3c14d04b5b41425faa31d2170d4d6a5f","job":"8ad3e9c6c972418397daa3655b2ad1fe"}'}
+{'id': 474, 'action': 'job_submitted', 'payload': '{"dataset":"3c14d04b5b41425faa31d2170d4d6a5f","job":"e050c850286f4d1a95e634c7863e8fa2"}'}
+{'id': 475, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"e050c850286f4d1a95e634c7863e8fa2","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '1f64804114744328927e1c1d45bf79cf', 'name': 'Screening study 7116', 'kind': 'screening', 'created': '2026-10-18T20:49:34.375712+00:00'}
+datasets
+{'id': 'ac82b3e12e3a435b9864d210154424fb', 'revision': 1, 'sha': 'b5eeb780a7c93b279c0116cdb93018e6fcd8121f2288834e6bede57232760639'}
+{'id': '06f57c0f856442068a946cc76503d3fb', 'revision': 2, 'sha': '3ecc3459389bb072eaeb37b89d1b3711185ba7cf124982e4c78ac1ec419faf0e'}
+ingest_sessions
+{'id': '6cf57542a0454969bc6c897f5b379340', 'delivery_key': 'delivery-0', 'published_dataset': 'ac82b3e12e3a435b9864d210154424fb'}
+{'id': 'ab2588eaa7b14a2391015bee1a698557', 'delivery_key': 'delivery-1', 'published_dataset': '06f57c0f856442068a946cc76503d3fb'}
+jobs
+{'id': 'f21414a0a1944ea99f4b16aa2478cfb4', 'dataset': '06f57c0f856442068a946cc76503d3fb', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'f543868a3b9645eebbc3a87d2513ac25', 'dataset': '06f57c0f856442068a946cc76503d3fb', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'b8f3004a10f7413aa97d15526aaf434c', 'dataset': 'ac82b3e12e3a435b9864d210154424fb', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '13de5b32c7624949bb8d549a3a58b48e', 'dataset': 'ac82b3e12e3a435b9864d210154424fb', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '19701c9eb37343b7b95c31da948584ad', 'dataset': 'ac82b3e12e3a435b9864d210154424fb', 'state': 'running', 'generation': 1, 'staged': 1}
+events
+{'id': 258, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 259, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"4b601b15eb537387f3d9e83d3e617ae3949456c9c66379b2a30a87dc0ee80783","session":"6cf57542a0454969bc6c897f5b379340"}'}
+{'id': 260, 'action': 'imported', 'payload': '{"dataset":"ac82b3e12e3a435b9864d210154424fb","revision":1,"sha256":"b5eeb780a7c93b279c0116cdb93018e6fcd8121f2288834e6bede57232760639"}'}
+{'id': 261, 'action': 'ingest_published', 'payload': '{"dataset":"ac82b3e12e3a435b9864d210154424fb","session":"6cf57542a0454969bc6c897f5b379340"}'}
+{'id': 262, 'action': 'job_submitted', 'payload': '{"dataset":"ac82b3e12e3a435b9864d210154424fb","job":"b8f3004a10f7413aa97d15526aaf434c"}'}
+{'id': 263, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"b8f3004a10f7413aa97d15526aaf434c","worker":"fixture-completed"}'}
+{'id': 264, 'action': 'job_published', 'payload': '{"generation":1,"job":"b8f3004a10f7413aa97d15526aaf434c","run":"181c2b7fcd154f8294367c958cf4b193"}'}
+{'id': 265, 'action': 'reviewed', 'payload': '{"action":"accept","decision":17,"run":"181c2b7fcd154f8294367c958cf4b193"}'}
+{'id': 266, 'action': 'job_submitted', 'payload': '{"dataset":"ac82b3e12e3a435b9864d210154424fb","job":"19701c9eb37343b7b95c31da948584ad"}'}
+{'id': 267, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"19701c9eb37343b7b95c31da948584ad","worker":"fixture-staged"}'}
+{'id': 268, 'action': 'job_submitted', 'payload': '{"dataset":"ac82b3e12e3a435b9864d210154424fb","job":"13de5b32c7624949bb8d549a3a58b48e"}'}
+{'id': 269, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"03793f6ea4abbbf30dec6efbbc9b3f5a4577f7fb04383f95766fcbf9b172f49d","session":"ab2588eaa7b14a2391015bee1a698557"}'}
+{'id': 270, 'action': 'imported', 'payload': '{"dataset":"06f57c0f856442068a946cc76503d3fb","revision":2,"sha256":"3ecc3459389bb072eaeb37b89d1b3711185ba7cf124982e4c78ac1ec419faf0e"}'}
+{'id': 271, 'action': 'ingest_published', 'payload': '{"dataset":"06f57c0f856442068a946cc76503d3fb","session":"ab2588eaa7b14a2391015bee1a698557"}'}
+{'id': 272, 'action': 'job_submitted', 'payload': '{"dataset":"06f57c0f856442068a946cc76503d3fb","job":"f543868a3b9645eebbc3a87d2513ac25"}'}
+{'id': 273, 'action': 'job_submitted', 'payload': '{"dataset":"06f57c0f856442068a946cc76503d3fb","job":"f21414a0a1944ea99f4b16aa2478cfb4"}'}
+{'id': 274, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"f21414a0a1944ea99f4b16aa2478cfb4","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '2327e74bddbf4859874d0bd3ec4d07f3', 'name': 'Screening study 7101', 'kind': 'screening', 'created': '2026-10-18T20:49:34.127606+00:00'}
+datasets
+{'id': 'd22791b27e724d9ea5824ddab3ecd606', 'revision': 1, 'sha': '3230dcc2e3b6334208dde33c62e455759d75140abde17ce62b7796d217088a1a'}
+ingest_sessions
+{'id': '5e197ec9107b4ebcb1a2a7c153a89bdd', 'delivery_key': 'delivery-0', 'published_dataset': 'd22791b27e724d9ea5824ddab3ecd606'}
+{'id': '26d534473c2a450db6a5ee6d769c307f', 'delivery_key': 'delivery-1', 'published_dataset': 'd22791b27e724d9ea5824ddab3ecd606'}
+jobs
+{'id': 'f74c9487b97743c0ba6698c3a8b79a01', 'dataset': 'd22791b27e724d9ea5824ddab3ecd606', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': 'b63c833b5b144262bc7a3f6b43b12c3c', 'dataset': 'd22791b27e724d9ea5824ddab3ecd606', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '6f52ccbcf83c4aaf942ce22ce69822c9', 'dataset': 'd22791b27e724d9ea5824ddab3ecd606', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'e30582d9c10c47988c35cec6db2849c0', 'dataset': 'd22791b27e724d9ea5824ddab3ecd606', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '63cfe2fc2e794c04b213161a01ef4341', 'dataset': 'd22791b27e724d9ea5824ddab3ecd606', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 18, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 19, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"728fcb066844dc54ba068f6c24b7585bdf82af732b56cd3e642eafbdb56b935e","session":"5e197ec9107b4ebcb1a2a7c153a89bdd"}'}
+{'id': 20, 'action': 'imported', 'payload': '{"dataset":"d22791b27e724d9ea5824ddab3ecd606","revision":1,"sha256":"3230dcc2e3b6334208dde33c62e455759d75140abde17ce62b7796d217088a1a"}'}
+{'id': 21, 'action': 'ingest_published', 'payload': '{"dataset":"d22791b27e724d9ea5824ddab3ecd606","session":"5e197ec9107b4ebcb1a2a7c153a89bdd"}'}
+{'id': 22, 'action': 'job_submitted', 'payload': '{"dataset":"d22791b27e724d9ea5824ddab3ecd606","job":"f74c9487b97743c0ba6698c3a8b79a01"}'}
+{'id': 23, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"f74c9487b97743c0ba6698c3a8b79a01","worker":"fixture-completed"}'}
+{'id': 24, 'action': 'job_published', 'payload': '{"generation":1,"job":"f74c9487b97743c0ba6698c3a8b79a01","run":"75444aa366c543d68972ae1c0420e06d"}'}
+{'id': 25, 'action': 'reviewed', 'payload': '{"action":"accept","decision":2,"run":"75444aa366c543d68972ae1c0420e06d"}'}
+{'id': 26, 'action': 'job_submitted', 'payload': '{"dataset":"d22791b27e724d9ea5824ddab3ecd606","job":"6f52ccbcf83c4aaf942ce22ce69822c9"}'}
+{'id': 27, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"6f52ccbcf83c4aaf942ce22ce69822c9","worker":"fixture-staged"}'}
+{'id': 28, 'action': 'job_submitted', 'payload': '{"dataset":"d22791b27e724d9ea5824ddab3ecd606","job":"b63c833b5b144262bc7a3f6b43b12c3c"}'}
+{'id': 29, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"5c2d3454a1bec5890ef3d0cd0b268a6cd06e04e4883b5a60e1acd9c371a92256","session":"26d534473c2a450db6a5ee6d769c307f"}'}
+{'id': 30, 'action': 'ingest_published', 'payload': '{"dataset":"d22791b27e724d9ea5824ddab3ecd606","session":"26d534473c2a450db6a5ee6d769c307f"}'}
+{'id': 31, 'action': 'job_submitted', 'payload': '{"dataset":"d22791b27e724d9ea5824ddab3ecd606","job":"63cfe2fc2e794c04b213161a01ef4341"}'}
+{'id': 32, 'action': 'job_submitted', 'payload': '{"dataset":"d22791b27e724d9ea5824ddab3ecd606","job":"e30582d9c10c47988c35cec6db2849c0"}'}
+{'id': 33, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"e30582d9c10c47988c35cec6db2849c0","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '259c706e496b477788c07d033e47b317', 'name': 'Screening study 7133', 'kind': 'screening', 'created': '2026-10-18T20:49:34.625714+00:00'}
+datasets
+{'id': '50d0a99c57164ec7875a84f635e3f9e7', 'revision': 1, 'sha': 'a1d32c78ed397bf7962f30fdc0a3f4d939a749d8a0c9f41ebeef173a391eeb54'}
+ingest_sessions
+{'id': '2d29140943884bdebf373cbee4586e3c', 'delivery_key': 'delivery-0', 'published_dataset': '50d0a99c57164ec7875a84f635e3f9e7'}
+{'id': '2c416fae4c8a463eb2c16a3fa2b332b6', 'delivery_key': 'delivery-1', 'published_dataset': '50d0a99c57164ec7875a84f635e3f9e7'}
+jobs
+{'id': 'ef94e5ec2eb74624bf0d3a288cf59b43', 'dataset': '50d0a99c57164ec7875a84f635e3f9e7', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '73b225b32adf4eb7b5f394b0c82e8673', 'dataset': '50d0a99c57164ec7875a84f635e3f9e7', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'f7e9191af8394ab3b54f9d22e46562b5', 'dataset': '50d0a99c57164ec7875a84f635e3f9e7', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '23e6f0c4d87644bc9ff521044e9e04f1', 'dataset': '50d0a99c57164ec7875a84f635e3f9e7', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 507, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 508, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"c6b16cd7ac3d253197ea8e89ff0152e09494d4fa9bd5d879607ae5bd56257463","session":"2d29140943884bdebf373cbee4586e3c"}'}
+{'id': 509, 'action': 'imported', 'payload': '{"dataset":"50d0a99c57164ec7875a84f635e3f9e7","revision":1,"sha256":"a1d32c78ed397bf7962f30fdc0a3f4d939a749d8a0c9f41ebeef173a391eeb54"}'}
+{'id': 510, 'action': 'ingest_published', 'payload': '{"dataset":"50d0a99c57164ec7875a84f635e3f9e7","session":"2d29140943884bdebf373cbee4586e3c"}'}
+{'id': 511, 'action': 'job_submitted', 'payload': '{"dataset":"50d0a99c57164ec7875a84f635e3f9e7","job":"ef94e5ec2eb74624bf0d3a288cf59b43"}'}
+{'id': 512, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"ef94e5ec2eb74624bf0d3a288cf59b43","worker":"fixture"}'}
+{'id': 513, 'action': 'job_published', 'payload': '{"generation":1,"job":"ef94e5ec2eb74624bf0d3a288cf59b43","run":"3294def47a824058a25a4fe36ec74ce0"}'}
+{'id': 514, 'action': 'reviewed', 'payload': '{"action":"accept","decision":34,"run":"3294def47a824058a25a4fe36ec74ce0"}'}
+{'id': 515, 'action': 'job_submitted', 'payload': '{"dataset":"50d0a99c57164ec7875a84f635e3f9e7","job":"73b225b32adf4eb7b5f394b0c82e8673"}'}
+{'id': 516, 'action': 'job_submitted', 'payload': '{"dataset":"50d0a99c57164ec7875a84f635e3f9e7","job":"f7e9191af8394ab3b54f9d22e46562b5"}'}
+{'id': 517, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"f7e9191af8394ab3b54f9d22e46562b5","worker":"fixture"}'}
+{'id': 518, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"83aa5caa7f43371b61b2ecfb048534989d597b73c5ee10aa2e53755f7d2e95e8","session":"2c416fae4c8a463eb2c16a3fa2b332b6"}'}
+{'id': 519, 'action': 'ingest_published', 'payload': '{"dataset":"50d0a99c57164ec7875a84f635e3f9e7","session":"2c416fae4c8a463eb2c16a3fa2b332b6"}'}
+{'id': 520, 'action': 'job_submitted', 'payload': '{"dataset":"50d0a99c57164ec7875a84f635e3f9e7","job":"23e6f0c4d87644bc9ff521044e9e04f1"}'}
+
+STUDY {'id': '2643d33eda734489978e11b6f1831487', 'name': 'Screening study 7103', 'kind': 'screening', 'created': '2026-10-18T20:49:34.164572+00:00'}
+datasets
+{'id': '9e98f9073a3b4c57ae05f9a42a8779d8', 'revision': 1, 'sha': '4d1cd7116122058a758b722978ca964ae21136911ffbb2d5f9e7f58838c074c8'}
+{'id': '808d0f7491d1485bb071c9dec0ec01f3', 'revision': 2, 'sha': '951b4c69cdec0e5eb94fe5c479ac2f6f3906113c12edc47a5c087d1537ba9aa3'}
+ingest_sessions
+{'id': '63102bd690ec499f97d04f53b76e17b4', 'delivery_key': 'delivery-0', 'published_dataset': '9e98f9073a3b4c57ae05f9a42a8779d8'}
+{'id': '059bc1ed5eed40cebb7e9bedcb15b21f', 'delivery_key': 'delivery-1', 'published_dataset': '9e98f9073a3b4c57ae05f9a42a8779d8'}
+jobs
+{'id': '6578a066a1dd40ad83bfb8e3c6652a53', 'dataset': '9e98f9073a3b4c57ae05f9a42a8779d8', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '1d41feb64c6348f391a7923d85f6c0cf', 'dataset': '9e98f9073a3b4c57ae05f9a42a8779d8', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '3dac7e51c58641ed8fbb6738653f694d', 'dataset': '9e98f9073a3b4c57ae05f9a42a8779d8', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '75a84b290b1a488bbc1025141b05d43d', 'dataset': '9e98f9073a3b4c57ae05f9a42a8779d8', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '6f5cd03de7cf4b5cb1175911de9bd622', 'dataset': '9e98f9073a3b4c57ae05f9a42a8779d8', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 50, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 51, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"132e2873a950b321304235868199766d9614fe7ca3f77401ab8742b9282d205d","session":"63102bd690ec499f97d04f53b76e17b4"}'}
+{'id': 52, 'action': 'imported', 'payload': '{"dataset":"9e98f9073a3b4c57ae05f9a42a8779d8","revision":1,"sha256":"4d1cd7116122058a758b722978ca964ae21136911ffbb2d5f9e7f58838c074c8"}'}
+{'id': 53, 'action': 'ingest_published', 'payload': '{"dataset":"9e98f9073a3b4c57ae05f9a42a8779d8","session":"63102bd690ec499f97d04f53b76e17b4"}'}
+{'id': 54, 'action': 'job_submitted', 'payload': '{"dataset":"9e98f9073a3b4c57ae05f9a42a8779d8","job":"6578a066a1dd40ad83bfb8e3c6652a53"}'}
+{'id': 55, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"6578a066a1dd40ad83bfb8e3c6652a53","worker":"fixture-completed"}'}
+{'id': 56, 'action': 'job_published', 'payload': '{"generation":1,"job":"6578a066a1dd40ad83bfb8e3c6652a53","run":"ca28ba6b9e97486fad0c540d0e4cf970"}'}
+{'id': 57, 'action': 'reviewed', 'payload': '{"action":"accept","decision":4,"run":"ca28ba6b9e97486fad0c540d0e4cf970"}'}
+{'id': 58, 'action': 'job_submitted', 'payload': '{"dataset":"9e98f9073a3b4c57ae05f9a42a8779d8","job":"3dac7e51c58641ed8fbb6738653f694d"}'}
+{'id': 59, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"3dac7e51c58641ed8fbb6738653f694d","worker":"fixture-staged"}'}
+{'id': 60, 'action': 'job_submitted', 'payload': '{"dataset":"9e98f9073a3b4c57ae05f9a42a8779d8","job":"1d41feb64c6348f391a7923d85f6c0cf"}'}
+{'id': 61, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"9c4c97d459e04642941de4ba8fcae1d27dd0538aa5c6834ba656b8ec755ce765","session":"059bc1ed5eed40cebb7e9bedcb15b21f"}'}
+{'id': 62, 'action': 'ingest_published', 'payload': '{"dataset":"9e98f9073a3b4c57ae05f9a42a8779d8","session":"059bc1ed5eed40cebb7e9bedcb15b21f"}'}
+{'id': 63, 'action': 'job_submitted', 'payload': '{"dataset":"9e98f9073a3b4c57ae05f9a42a8779d8","job":"6f5cd03de7cf4b5cb1175911de9bd622"}'}
+{'id': 64, 'action': 'job_submitted', 'payload': '{"dataset":"9e98f9073a3b4c57ae05f9a42a8779d8","job":"75a84b290b1a488bbc1025141b05d43d"}'}
+{'id': 65, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"75a84b290b1a488bbc1025141b05d43d","worker":"fixture-staged-after"}'}
+{'id': 66, 'action': 'imported', 'payload': '{"dataset":"808d0f7491d1485bb071c9dec0ec01f3","revision":2,"sha256":"951b4c69cdec0e5eb94fe5c479ac2f6f3906113c12edc47a5c087d1537ba9aa3"}'}
+
+STUDY {'id': '28d7202b18224b8b97a2c722c23f5d3b', 'name': 'Screening study 7105', 'kind': 'screening', 'created': '2026-10-18T20:49:34.207302+00:00'}
+datasets
+{'id': '2d50b5bd9dfd4974bc0d076a9efd028f', 'revision': 1, 'sha': '02d1b9b5dd665506361aff9b3e6fa9853a413ea1fa935202feb980a16d4be1fe'}
+ingest_sessions
+{'id': '6eef56946e764db1b22d9655e062f0c4', 'delivery_key': 'delivery-0', 'published_dataset': '2d50b5bd9dfd4974bc0d076a9efd028f'}
+{'id': 'b38d173e448147a2a13e99e081e76531', 'delivery_key': 'delivery-1', 'published_dataset': '2d50b5bd9dfd4974bc0d076a9efd028f'}
+jobs
+{'id': '4e2952d065b640d0adb8fc5f952dd8fa', 'dataset': '2d50b5bd9dfd4974bc0d076a9efd028f', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': 'c3a94ea028b244b09c63f1c0cef985cf', 'dataset': '2d50b5bd9dfd4974bc0d076a9efd028f', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '9f0848f1740a40cab1ebb70fe15a8af3', 'dataset': '2d50b5bd9dfd4974bc0d076a9efd028f', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '24867bb9d2cd41219d6f0315b7db6d61', 'dataset': '2d50b5bd9dfd4974bc0d076a9efd028f', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'f975f44288794020abb746a613cdcbc1', 'dataset': '2d50b5bd9dfd4974bc0d076a9efd028f', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 83, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 84, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"00dc503b52ed30933deed8160f856a46ca5c8039519b4466f7fd3d303cbd6a69","session":"6eef56946e764db1b22d9655e062f0c4"}'}
+{'id': 85, 'action': 'imported', 'payload': '{"dataset":"2d50b5bd9dfd4974bc0d076a9efd028f","revision":1,"sha256":"02d1b9b5dd665506361aff9b3e6fa9853a413ea1fa935202feb980a16d4be1fe"}'}
+{'id': 86, 'action': 'ingest_published', 'payload': '{"dataset":"2d50b5bd9dfd4974bc0d076a9efd028f","session":"6eef56946e764db1b22d9655e062f0c4"}'}
+{'id': 87, 'action': 'job_submitted', 'payload': '{"dataset":"2d50b5bd9dfd4974bc0d076a9efd028f","job":"4e2952d065b640d0adb8fc5f952dd8fa"}'}
+{'id': 88, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"4e2952d065b640d0adb8fc5f952dd8fa","worker":"fixture-completed"}'}
+{'id': 89, 'action': 'job_published', 'payload': '{"generation":1,"job":"4e2952d065b640d0adb8fc5f952dd8fa","run":"99415abeef4c41be9a7ea17c9d50170b"}'}
+{'id': 90, 'action': 'reviewed', 'payload': '{"action":"accept","decision":6,"run":"99415abeef4c41be9a7ea17c9d50170b"}'}
+{'id': 91, 'action': 'job_submitted', 'payload': '{"dataset":"2d50b5bd9dfd4974bc0d076a9efd028f","job":"9f0848f1740a40cab1ebb70fe15a8af3"}'}
+{'id': 92, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"9f0848f1740a40cab1ebb70fe15a8af3","worker":"fixture-staged"}'}
+{'id': 93, 'action': 'job_submitted', 'payload': '{"dataset":"2d50b5bd9dfd4974bc0d076a9efd028f","job":"c3a94ea028b244b09c63f1c0cef985cf"}'}
+{'id': 94, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"af141772d72f30308177164e4efb5c6551833b5498159f430b35f71c10c31b3e","session":"b38d173e448147a2a13e99e081e76531"}'}
+{'id': 95, 'action': 'ingest_published', 'payload': '{"dataset":"2d50b5bd9dfd4974bc0d076a9efd028f","session":"b38d173e448147a2a13e99e081e76531"}'}
+{'id': 96, 'action': 'job_submitted', 'payload': '{"dataset":"2d50b5bd9dfd4974bc0d076a9efd028f","job":"f975f44288794020abb746a613cdcbc1"}'}
+{'id': 97, 'action': 'job_submitted', 'payload': '{"dataset":"2d50b5bd9dfd4974bc0d076a9efd028f","job":"24867bb9d2cd41219d6f0315b7db6d61"}'}
+{'id': 98, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"24867bb9d2cd41219d6f0315b7db6d61","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '28ed9eb925e54bdb97d19833219813c5', 'name': 'Screening study 7137', 'kind': 'screening', 'created': '2026-10-18T20:49:34.683143+00:00'}
+datasets
+{'id': '371e522a07464725a8c0f118eea63684', 'revision': 1, 'sha': 'b026eaad3ae969d68407ebcd93e3e53a8ea5cde094bb5ad0e86a3ff298c77275'}
+{'id': '7b242830556c4e5496b4456870d5bdc6', 'revision': 2, 'sha': 'e7d1f4a45508889d5ad161ec6724132477de4378b1734689bea744ed4026edb9'}
+ingest_sessions
+{'id': '404a3f75ca174db09a03eac601331834', 'delivery_key': 'delivery-0', 'published_dataset': '371e522a07464725a8c0f118eea63684'}
+{'id': '86e9bc2dbab3443fb5fdd10f4776f051', 'delivery_key': 'delivery-1', 'published_dataset': '371e522a07464725a8c0f118eea63684'}
+{'id': '840c932b9b674d8f898c97bc272cb99e', 'delivery_key': 'delivery-2', 'published_dataset': '7b242830556c4e5496b4456870d5bdc6'}
+jobs
+{'id': '45eb6393514341deb09868e7865f2c4c', 'dataset': '371e522a07464725a8c0f118eea63684', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': 'e5ea3b989408423c9070bbcb671d5b6f', 'dataset': '371e522a07464725a8c0f118eea63684', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '63bafa549c8e4626ad5b993a860a2e05', 'dataset': '371e522a07464725a8c0f118eea63684', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '7a28ed0d5aa148158f5df3cdd212bebf', 'dataset': '371e522a07464725a8c0f118eea63684', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'e22d5a03b45a4e5fa5ec8d15478d30e3', 'dataset': '7b242830556c4e5496b4456870d5bdc6', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 567, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 568, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"0be34ec47ea6e1e873dfab17f18c5ac810a8d6b0097b42e9ebeefeffa1e405e5","session":"404a3f75ca174db09a03eac601331834"}'}
+{'id': 569, 'action': 'imported', 'payload': '{"dataset":"371e522a07464725a8c0f118eea63684","revision":1,"sha256":"b026eaad3ae969d68407ebcd93e3e53a8ea5cde094bb5ad0e86a3ff298c77275"}'}
+{'id': 570, 'action': 'ingest_published', 'payload': '{"dataset":"371e522a07464725a8c0f118eea63684","session":"404a3f75ca174db09a03eac601331834"}'}
+{'id': 571, 'action': 'job_submitted', 'payload': '{"dataset":"371e522a07464725a8c0f118eea63684","job":"45eb6393514341deb09868e7865f2c4c"}'}
+{'id': 572, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"45eb6393514341deb09868e7865f2c4c","worker":"fixture"}'}
+{'id': 573, 'action': 'job_published', 'payload': '{"generation":1,"job":"45eb6393514341deb09868e7865f2c4c","run":"60817e024a59437c93423cf2947e881b"}'}
+{'id': 574, 'action': 'reviewed', 'payload': '{"action":"accept","decision":38,"run":"60817e024a59437c93423cf2947e881b"}'}
+{'id': 575, 'action': 'job_submitted', 'payload': '{"dataset":"371e522a07464725a8c0f118eea63684","job":"e5ea3b989408423c9070bbcb671d5b6f"}'}
+{'id': 576, 'action': 'job_submitted', 'payload': '{"dataset":"371e522a07464725a8c0f118eea63684","job":"63bafa549c8e4626ad5b993a860a2e05"}'}
+{'id': 577, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"63bafa549c8e4626ad5b993a860a2e05","worker":"fixture"}'}
+{'id': 578, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"b561b3b0947deb96f389975442b5969931a300640dd359c20a85b5bdda9e1b71","session":"86e9bc2dbab3443fb5fdd10f4776f051"}'}
+{'id': 579, 'action': 'ingest_published', 'payload': '{"dataset":"371e522a07464725a8c0f118eea63684","session":"86e9bc2dbab3443fb5fdd10f4776f051"}'}
+{'id': 580, 'action': 'job_submitted', 'payload': '{"dataset":"371e522a07464725a8c0f118eea63684","job":"7a28ed0d5aa148158f5df3cdd212bebf"}'}
+{'id': 581, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"46b0558ef5070422cd2a7e7227e6b78a32e28d80731cd12384c63558adb55d81","session":"840c932b9b674d8f898c97bc272cb99e"}'}
+{'id': 582, 'action': 'imported', 'payload': '{"dataset":"7b242830556c4e5496b4456870d5bdc6","revision":2,"sha256":"e7d1f4a45508889d5ad161ec6724132477de4378b1734689bea744ed4026edb9"}'}
+{'id': 583, 'action': 'ingest_published', 'payload': '{"dataset":"7b242830556c4e5496b4456870d5bdc6","session":"840c932b9b674d8f898c97bc272cb99e"}'}
+{'id': 584, 'action': 'job_submitted', 'payload': '{"dataset":"7b242830556c4e5496b4456870d5bdc6","job":"e22d5a03b45a4e5fa5ec8d15478d30e3"}'}
+
+STUDY {'id': '39e44ec3047c4301a35bbaf5902d4ba6', 'name': 'Screening study 7132', 'kind': 'screening', 'created': '2026-10-18T20:49:34.608654+00:00'}
+datasets
+{'id': 'cbfaee3613734cfeba9aa366cceea309', 'revision': 1, 'sha': '0a3bd7ad3dded843fa91e507daf95ccf6ca35dff3d30ca95576d86081e392c78'}
+ingest_sessions
+{'id': '174e37328c664c688a77f0fbc7e69dac', 'delivery_key': 'delivery-0', 'published_dataset': 'cbfaee3613734cfeba9aa366cceea309'}
+{'id': '6943b499329e48278078f2a834458624', 'delivery_key': 'delivery-1', 'published_dataset': 'cbfaee3613734cfeba9aa366cceea309'}
+jobs
+{'id': 'f85abad6cd2b4b8abf64bc5776399622', 'dataset': 'cbfaee3613734cfeba9aa366cceea309', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '003b4ca3705c4fbf94865501cc29bdf7', 'dataset': 'cbfaee3613734cfeba9aa366cceea309', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '67ef0951c4d04592aea04dca3873f3f7', 'dataset': 'cbfaee3613734cfeba9aa366cceea309', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '57002022676045a2afce30c735a2cf3b', 'dataset': 'cbfaee3613734cfeba9aa366cceea309', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 493, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 494, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"140a7787bb06fbb7fb5bb51ae36d8e014ca7a6176b0cfb0b9fbaa55880ee22e9","session":"174e37328c664c688a77f0fbc7e69dac"}'}
+{'id': 495, 'action': 'imported', 'payload': '{"dataset":"cbfaee3613734cfeba9aa366cceea309","revision":1,"sha256":"0a3bd7ad3dded843fa91e507daf95ccf6ca35dff3d30ca95576d86081e392c78"}'}
+{'id': 496, 'action': 'ingest_published', 'payload': '{"dataset":"cbfaee3613734cfeba9aa366cceea309","session":"174e37328c664c688a77f0fbc7e69dac"}'}
+{'id': 497, 'action': 'job_submitted', 'payload': '{"dataset":"cbfaee3613734cfeba9aa366cceea309","job":"f85abad6cd2b4b8abf64bc5776399622"}'}
+{'id': 498, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"f85abad6cd2b4b8abf64bc5776399622","worker":"fixture"}'}
+{'id': 499, 'action': 'job_published', 'payload': '{"generation":1,"job":"f85abad6cd2b4b8abf64bc5776399622","run":"8a5390a704f040a8b99c6fb85c537b01"}'}
+{'id': 500, 'action': 'reviewed', 'payload': '{"action":"accept","decision":33,"run":"8a5390a704f040a8b99c6fb85c537b01"}'}
+{'id': 501, 'action': 'job_submitted', 'payload': '{"dataset":"cbfaee3613734cfeba9aa366cceea309","job":"003b4ca3705c4fbf94865501cc29bdf7"}'}
+{'id': 502, 'action': 'job_submitted', 'payload': '{"dataset":"cbfaee3613734cfeba9aa366cceea309","job":"67ef0951c4d04592aea04dca3873f3f7"}'}
+{'id': 503, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"67ef0951c4d04592aea04dca3873f3f7","worker":"fixture"}'}
+{'id': 504, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"b328f43dba93d9aff794e403807a01af096c76b4366b117829a72a8435f7c376","session":"6943b499329e48278078f2a834458624"}'}
+{'id': 505, 'action': 'ingest_published', 'payload': '{"dataset":"cbfaee3613734cfeba9aa366cceea309","session":"6943b499329e48278078f2a834458624"}'}
+{'id': 506, 'action': 'job_submitted', 'payload': '{"dataset":"cbfaee3613734cfeba9aa366cceea309","job":"57002022676045a2afce30c735a2cf3b"}'}
+
+STUDY {'id': '43ec12493fa34353b1a7276d6740de0d', 'name': 'Screening study 7117', 'kind': 'screening', 'created': '2026-10-18T20:49:34.390089+00:00'}
+datasets
+{'id': '92f6c154081c46db92da7d5d792527b0', 'revision': 1, 'sha': 'df97234f8af915e1f2df300f81439b69730e84025a670b98523b3a124655a682'}
+{'id': '44283b48fcc64b09bd0c5abe42cf7b9b', 'revision': 2, 'sha': '5bf60d8edee1f023eaba354f561cb7e4b994b969a6c9dc7a1940f44cc222f331'}
+ingest_sessions
+{'id': '1d0b65e0df7c45749bcdc2302b4d01de', 'delivery_key': 'delivery-0', 'published_dataset': '92f6c154081c46db92da7d5d792527b0'}
+{'id': '145ddbba50ae435d967775e7856ba17c', 'delivery_key': 'delivery-1', 'published_dataset': '44283b48fcc64b09bd0c5abe42cf7b9b'}
+jobs
+{'id': 'd200a6f795e54335976d5618ac4a840b', 'dataset': '44283b48fcc64b09bd0c5abe42cf7b9b', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'fa675fe16f1d4701aa4f1dd05cf653fc', 'dataset': '44283b48fcc64b09bd0c5abe42cf7b9b', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'dd1329dc71d34d948e773069b600edff', 'dataset': '92f6c154081c46db92da7d5d792527b0', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '77d8133291fc46fabcd5592240904ddf', 'dataset': '92f6c154081c46db92da7d5d792527b0', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'd70c7c487231431abdacc2e32f427f43', 'dataset': '92f6c154081c46db92da7d5d792527b0', 'state': 'running', 'generation': 1, 'staged': 1}
+events
+{'id': 275, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 276, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"fe4d9791f0e8ba65a4b38a67b2629d79b7a3e580a7dc03c85cec0b7a90e5e3d4","session":"1d0b65e0df7c45749bcdc2302b4d01de"}'}
+{'id': 277, 'action': 'imported', 'payload': '{"dataset":"92f6c154081c46db92da7d5d792527b0","revision":1,"sha256":"df97234f8af915e1f2df300f81439b69730e84025a670b98523b3a124655a682"}'}
+{'id': 278, 'action': 'ingest_published', 'payload': '{"dataset":"92f6c154081c46db92da7d5d792527b0","session":"1d0b65e0df7c45749bcdc2302b4d01de"}'}
+{'id': 279, 'action': 'job_submitted', 'payload': '{"dataset":"92f6c154081c46db92da7d5d792527b0","job":"dd1329dc71d34d948e773069b600edff"}'}
+{'id': 280, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"dd1329dc71d34d948e773069b600edff","worker":"fixture-completed"}'}
+{'id': 281, 'action': 'job_published', 'payload': '{"generation":1,"job":"dd1329dc71d34d948e773069b600edff","run":"dd626cffec804c2ea0577d23baa38d3f"}'}
+{'id': 282, 'action': 'reviewed', 'payload': '{"action":"accept","decision":18,"run":"dd626cffec804c2ea0577d23baa38d3f"}'}
+{'id': 283, 'action': 'job_submitted', 'payload': '{"dataset":"92f6c154081c46db92da7d5d792527b0","job":"d70c7c487231431abdacc2e32f427f43"}'}
+{'id': 284, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"d70c7c487231431abdacc2e32f427f43","worker":"fixture-staged"}'}
+{'id': 285, 'action': 'job_submitted', 'payload': '{"dataset":"92f6c154081c46db92da7d5d792527b0","job":"77d8133291fc46fabcd5592240904ddf"}'}
+{'id': 286, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"9587bee6f076b76a8695184fc27f732a95b0421ce830b01ad17a42c0405d0bc8","session":"145ddbba50ae435d967775e7856ba17c"}'}
+{'id': 287, 'action': 'imported', 'payload': '{"dataset":"44283b48fcc64b09bd0c5abe42cf7b9b","revision":2,"sha256":"5bf60d8edee1f023eaba354f561cb7e4b994b969a6c9dc7a1940f44cc222f331"}'}
+{'id': 288, 'action': 'ingest_published', 'payload': '{"dataset":"44283b48fcc64b09bd0c5abe42cf7b9b","session":"145ddbba50ae435d967775e7856ba17c"}'}
+{'id': 289, 'action': 'job_submitted', 'payload': '{"dataset":"44283b48fcc64b09bd0c5abe42cf7b9b","job":"fa675fe16f1d4701aa4f1dd05cf653fc"}'}
+{'id': 290, 'action': 'job_submitted', 'payload': '{"dataset":"44283b48fcc64b09bd0c5abe42cf7b9b","job":"d200a6f795e54335976d5618ac4a840b"}'}
+{'id': 291, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"d200a6f795e54335976d5618ac4a840b","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '4b86a72b27834b0e8a380281fa2fbef6', 'name': 'Screening study 7139', 'kind': 'screening', 'created': '2026-10-18T20:49:34.718765+00:00'}
+datasets
+{'id': '8aa2f1298a444128af904a1155979f25', 'revision': 1, 'sha': 'c7ac3baea545e48cadd5d56eb14ef8519593cbf89a9182975fe4b7d6725ffc50'}
+{'id': 'preview-33159b86dbcb47f3b938ab157d26245f', 'revision': 2, 'sha': 'a02ba91ece48d450a73e454b40f0613c926670728ffff2ca267a81035ba2d543'}
+{'id': 'preview-1687f9391eaa4d9fa75686dde960e3de', 'revision': 3, 'sha': 'dd73737839e376c1801f4070c50781049bca2845e000208cbc49587ed9268b62'}
+ingest_sessions
+{'id': '243e9f43fab248f7be5eaee5178c2b02', 'delivery_key': 'delivery-0', 'published_dataset': '8aa2f1298a444128af904a1155979f25'}
+{'id': '33159b86dbcb47f3b938ab157d26245f', 'delivery_key': 'delivery-1', 'published_dataset': '8aa2f1298a444128af904a1155979f25'}
+{'id': '1687f9391eaa4d9fa75686dde960e3de', 'delivery_key': 'delivery-2', 'published_dataset': '8aa2f1298a444128af904a1155979f25'}
+jobs
+{'id': 'defb823f7a1040b78a5ba612ba77bd89', 'dataset': '8aa2f1298a444128af904a1155979f25', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': 'f35fd31467214aeda6d9408a3009be49', 'dataset': '8aa2f1298a444128af904a1155979f25', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '340f0b37dd424fb49abbfdad38195504', 'dataset': 'preview-1687f9391eaa4d9fa75686dde960e3de', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '13e77fb3e9a44d6481ee718797749212', 'dataset': 'preview-1687f9391eaa4d9fa75686dde960e3de', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'ee7790b4489549e8950d37fd61724417', 'dataset': 'preview-1687f9391eaa4d9fa75686dde960e3de', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 603, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 604, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"7c1af36c2c584e26190e221e3bcd4b00e6b7c89e3718663b97e6793bd56eaaa8","session":"243e9f43fab248f7be5eaee5178c2b02"}'}
+{'id': 605, 'action': 'imported', 'payload': '{"dataset":"8aa2f1298a444128af904a1155979f25","revision":1,"sha256":"c7ac3baea545e48cadd5d56eb14ef8519593cbf89a9182975fe4b7d6725ffc50"}'}
+{'id': 606, 'action': 'ingest_published', 'payload': '{"dataset":"8aa2f1298a444128af904a1155979f25","session":"243e9f43fab248f7be5eaee5178c2b02"}'}
+{'id': 607, 'action': 'job_submitted', 'payload': '{"dataset":"8aa2f1298a444128af904a1155979f25","job":"defb823f7a1040b78a5ba612ba77bd89"}'}
+{'id': 608, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"defb823f7a1040b78a5ba612ba77bd89","worker":"fixture"}'}
+{'id': 609, 'action': 'job_published', 'payload': '{"generation":1,"job":"defb823f7a1040b78a5ba612ba77bd89","run":"a0d8f4a9135541cf9c66162018f468a8"}'}
+{'id': 610, 'action': 'reviewed', 'payload': '{"action":"accept","decision":40,"run":"a0d8f4a9135541cf9c66162018f468a8"}'}
+{'id': 611, 'action': 'job_submitted', 'payload': '{"dataset":"8aa2f1298a444128af904a1155979f25","job":"13e77fb3e9a44d6481ee718797749212"}'}
+{'id': 612, 'action': 'job_submitted', 'payload': '{"dataset":"8aa2f1298a444128af904a1155979f25","job":"f35fd31467214aeda6d9408a3009be49"}'}
+{'id': 613, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"f35fd31467214aeda6d9408a3009be49","worker":"fixture"}'}
+{'id': 614, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"a761407547759e186b551cd2077fa0ddf69979ace8ee81e7319904874f7fe743","session":"33159b86dbcb47f3b938ab157d26245f"}'}
+{'id': 615, 'action': 'ingest_published', 'payload': '{"dataset":"8aa2f1298a444128af904a1155979f25","session":"33159b86dbcb47f3b938ab157d26245f"}'}
+{'id': 616, 'action': 'job_submitted', 'payload': '{"dataset":"8aa2f1298a444128af904a1155979f25","job":"ee7790b4489549e8950d37fd61724417"}'}
+{'id': 617, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"4be6e0b5536843d4c3d6eaebd4b5b93a8a2cad564198d2efb83e51fc6be59f88","session":"1687f9391eaa4d9fa75686dde960e3de"}'}
+{'id': 618, 'action': 'ingest_published', 'payload': '{"dataset":"8aa2f1298a444128af904a1155979f25","session":"1687f9391eaa4d9fa75686dde960e3de"}'}
+{'id': 619, 'action': 'job_submitted', 'payload': '{"dataset":"8aa2f1298a444128af904a1155979f25","job":"340f0b37dd424fb49abbfdad38195504"}'}
+{'id': 620, 'action': 'transfer_evidence_recovered_preview', 'payload': '{"jobs":[{"from_dataset":"8aa2f1298a444128af904a1155979f25","job":"13e77fb3e9a44d6481ee718797749212","to_dataset":"preview-1687f9391eaa4d9fa75686dde960e3de"},{"from_dataset":"8aa2f1298a444128af904a1155979f25","job":"ee7790b4489549e8950d37fd61724417","to_dataset":"preview-1687f9391eaa4d9fa75686dde960e3de"},{"from_dataset":"8aa2f1298a444128af904a1155979f25","job":"340f0b37dd424fb49abbfdad38195504","to_dataset":"preview-1687f9391eaa4d9fa75686dde960e3de"}],"sessions":[{"from_dataset":"8aa2f1298a444128af904a1155979f25","session":"33159b86dbcb47f3b938ab157d26245f","sha256":"a02ba91ece48d450a73e454b40f0613c926670728ffff2ca267a81035ba2d543","to_dataset":"preview-33159b86dbcb47f3b938ab157d26245f"},{"from_dataset":"8aa2f1298a444128af904a1155979f25","session":"1687f9391eaa4d9fa75686dde960e3de","sha256":"dd73737839e376c1801f4070c50781049bca2845e000208cbc49587ed9268b62","to_dataset":"preview-1687f9391eaa4d9fa75686dde960e3de"}],"version":"transfer-evidence-preview-0"}'}
+
+STUDY {'id': '4dc65f0f4ef246309cf36050cb388321', 'name': 'Screening study 7131', 'kind': 'screening', 'created': '2026-10-18T20:49:34.585390+00:00'}
+datasets
+{'id': '05ed199bd6a74f469ecde1450e26b5f1', 'revision': 1, 'sha': 'bbae7cec9c805948c6ababb250678e063aca017855e7a55ba338c04b68e7bba1'}
+{'id': 'b38b59427e664d18adb2b495f6f5f535', 'revision': 2, 'sha': '1729785a3b73ba0ac81ac3d3d648324e2639c32c2302c2e377d287d51366f5bf'}
+ingest_sessions
+{'id': '8fde34494ea9498bb7d51dda24a23384', 'delivery_key': 'delivery-0', 'published_dataset': '05ed199bd6a74f469ecde1450e26b5f1'}
+{'id': '91bd9cf82b604dc89ce35164a2a0a976', 'delivery_key': 'delivery-1', 'published_dataset': 'b38b59427e664d18adb2b495f6f5f535'}
+jobs
+{'id': 'f602706a1ed1450cb737ae2c6e628b8b', 'dataset': '05ed199bd6a74f469ecde1450e26b5f1', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '12be893bc7e047238256e7705657a621', 'dataset': '05ed199bd6a74f469ecde1450e26b5f1', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'ba1b86887978495dabebd859209bc467', 'dataset': '05ed199bd6a74f469ecde1450e26b5f1', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '25992d1e74a44c29962c0fe98dccf464', 'dataset': 'b38b59427e664d18adb2b495f6f5f535', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '4d7561db1f52439e8177d24e382628d7', 'dataset': 'b38b59427e664d18adb2b495f6f5f535', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 476, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 477, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"da9438c38495765d5cabc5e8566f3be373b6f5df4a8d8cfc663a505683f97f6b","session":"8fde34494ea9498bb7d51dda24a23384"}'}
+{'id': 478, 'action': 'imported', 'payload': '{"dataset":"05ed199bd6a74f469ecde1450e26b5f1","revision":1,"sha256":"bbae7cec9c805948c6ababb250678e063aca017855e7a55ba338c04b68e7bba1"}'}
+{'id': 479, 'action': 'ingest_published', 'payload': '{"dataset":"05ed199bd6a74f469ecde1450e26b5f1","session":"8fde34494ea9498bb7d51dda24a23384"}'}
+{'id': 480, 'action': 'job_submitted', 'payload': '{"dataset":"05ed199bd6a74f469ecde1450e26b5f1","job":"f602706a1ed1450cb737ae2c6e628b8b"}'}
+{'id': 481, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"f602706a1ed1450cb737ae2c6e628b8b","worker":"fixture-completed"}'}
+{'id': 482, 'action': 'job_published', 'payload': '{"generation":1,"job":"f602706a1ed1450cb737ae2c6e628b8b","run":"4205752dd2564dc386664bbda1ef1616"}'}
+{'id': 483, 'action': 'reviewed', 'payload': '{"action":"accept","decision":32,"run":"4205752dd2564dc386664bbda1ef1616"}'}
+{'id': 484, 'action': 'job_submitted', 'payload': '{"dataset":"05ed199bd6a74f469ecde1450e26b5f1","job":"ba1b86887978495dabebd859209bc467"}'}
+{'id': 485, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"ba1b86887978495dabebd859209bc467","worker":"fixture-staged"}'}
+{'id': 486, 'action': 'job_submitted', 'payload': '{"dataset":"05ed199bd6a74f469ecde1450e26b5f1","job":"12be893bc7e047238256e7705657a621"}'}
+{'id': 487, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"153a70ce3e365e484e057fbac5c4f1242fff8ce093090b45b285e4347b5eb4e4","session":"91bd9cf82b604dc89ce35164a2a0a976"}'}
+{'id': 488, 'action': 'imported', 'payload': '{"dataset":"b38b59427e664d18adb2b495f6f5f535","revision":2,"sha256":"1729785a3b73ba0ac81ac3d3d648324e2639c32c2302c2e377d287d51366f5bf"}'}
+{'id': 489, 'action': 'ingest_published', 'payload': '{"dataset":"b38b59427e664d18adb2b495f6f5f535","session":"91bd9cf82b604dc89ce35164a2a0a976"}'}
+{'id': 490, 'action': 'job_submitted', 'payload': '{"dataset":"b38b59427e664d18adb2b495f6f5f535","job":"4d7561db1f52439e8177d24e382628d7"}'}
+{'id': 491, 'action': 'job_submitted', 'payload': '{"dataset":"b38b59427e664d18adb2b495f6f5f535","job":"25992d1e74a44c29962c0fe98dccf464"}'}
+{'id': 492, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"25992d1e74a44c29962c0fe98dccf464","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '58290152294649b08ac38eb3537050ab', 'name': 'Screening study 7129', 'kind': 'screening', 'created': '2026-10-18T20:49:34.565670+00:00'}
+datasets
+{'id': '78186a901d1149e790d2a762296478ea', 'revision': 1, 'sha': '4ece66996900ef3a63d607ef02e5f22d40354f074059cd907d66f5b4259fc843'}
+ingest_sessions
+jobs
+events
+{'id': 455, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 456, 'action': 'imported', 'payload': '{"dataset":"78186a901d1149e790d2a762296478ea","revision":1,"sha256":"4ece66996900ef3a63d607ef02e5f22d40354f074059cd907d66f5b4259fc843"}'}
+{'id': 457, 'action': 'analysis_started', 'payload': '{"dataset":"78186a901d1149e790d2a762296478ea","run":"921fc64cff604c409b863299f5e703ad"}'}
+{'id': 458, 'action': 'analysis_completed', 'payload': '{"result_sha256":"9efb5f36afca1a333381f4b605a510654efe93be425a0c5613269c655268b853","run":"921fc64cff604c409b863299f5e703ad"}'}
+{'id': 459, 'action': 'reviewed', 'payload': '{"action":"accept","decision":30,"run":"921fc64cff604c409b863299f5e703ad"}'}
+
+STUDY {'id': '64115012877742ae94a4dbaf4b105af3', 'name': 'Screening study 7115', 'kind': 'screening', 'created': '2026-10-18T20:49:34.360349+00:00'}
+datasets
+{'id': '433cb719ae964b2294275e15f1c7db42', 'revision': 1, 'sha': '0be694fd930deaf29d175205030369975910f8bd5b6997bc32f149a847099e2d'}
+{'id': 'ae566ddb6629460fb223c69fe65cd369', 'revision': 2, 'sha': '0feeca170d99b2c46b1df2140cbe359df3b46178dc60ea8da2fbcd984490c127'}
+ingest_sessions
+{'id': '7914d55891af4825954b477659715bb6', 'delivery_key': 'delivery-0', 'published_dataset': '433cb719ae964b2294275e15f1c7db42'}
+{'id': '70ac501c69c74131ab687e22999a94c5', 'delivery_key': 'delivery-1', 'published_dataset': 'ae566ddb6629460fb223c69fe65cd369'}
+jobs
+{'id': 'f386675a07ce4b4090d22c8203ac3272', 'dataset': '433cb719ae964b2294275e15f1c7db42', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '2a072c86b3da41b7854c1da2d5686b17', 'dataset': '433cb719ae964b2294275e15f1c7db42', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'cf59d2bf5e6d44dabeb8870aa9f2957c', 'dataset': '433cb719ae964b2294275e15f1c7db42', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'f845adec46a0475db47e23beedb8d63f', 'dataset': 'ae566ddb6629460fb223c69fe65cd369', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '6c384cc6b3334f6b9006e9d4dcd61145', 'dataset': 'ae566ddb6629460fb223c69fe65cd369', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 241, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 242, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"e5dd06959d43baf01fa400699444c9911eee25a8c16dbd6e406f9fdae18de8ee","session":"7914d55891af4825954b477659715bb6"}'}
+{'id': 243, 'action': 'imported', 'payload': '{"dataset":"433cb719ae964b2294275e15f1c7db42","revision":1,"sha256":"0be694fd930deaf29d175205030369975910f8bd5b6997bc32f149a847099e2d"}'}
+{'id': 244, 'action': 'ingest_published', 'payload': '{"dataset":"433cb719ae964b2294275e15f1c7db42","session":"7914d55891af4825954b477659715bb6"}'}
+{'id': 245, 'action': 'job_submitted', 'payload': '{"dataset":"433cb719ae964b2294275e15f1c7db42","job":"f386675a07ce4b4090d22c8203ac3272"}'}
+{'id': 246, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"f386675a07ce4b4090d22c8203ac3272","worker":"fixture-completed"}'}
+{'id': 247, 'action': 'job_published', 'payload': '{"generation":1,"job":"f386675a07ce4b4090d22c8203ac3272","run":"5ec78ff5e5ba490da8c5265919023507"}'}
+{'id': 248, 'action': 'reviewed', 'payload': '{"action":"accept","decision":16,"run":"5ec78ff5e5ba490da8c5265919023507"}'}
+{'id': 249, 'action': 'job_submitted', 'payload': '{"dataset":"433cb719ae964b2294275e15f1c7db42","job":"cf59d2bf5e6d44dabeb8870aa9f2957c"}'}
+{'id': 250, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"cf59d2bf5e6d44dabeb8870aa9f2957c","worker":"fixture-staged"}'}
+{'id': 251, 'action': 'job_submitted', 'payload': '{"dataset":"433cb719ae964b2294275e15f1c7db42","job":"2a072c86b3da41b7854c1da2d5686b17"}'}
+{'id': 252, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"81647cf24f0c9e0b83b331ac15bf6b2f51526ff700c954b94630663751c6ec9e","session":"70ac501c69c74131ab687e22999a94c5"}'}
+{'id': 253, 'action': 'imported', 'payload': '{"dataset":"ae566ddb6629460fb223c69fe65cd369","revision":2,"sha256":"0feeca170d99b2c46b1df2140cbe359df3b46178dc60ea8da2fbcd984490c127"}'}
+{'id': 254, 'action': 'ingest_published', 'payload': '{"dataset":"ae566ddb6629460fb223c69fe65cd369","session":"70ac501c69c74131ab687e22999a94c5"}'}
+{'id': 255, 'action': 'job_submitted', 'payload': '{"dataset":"ae566ddb6629460fb223c69fe65cd369","job":"6c384cc6b3334f6b9006e9d4dcd61145"}'}
+{'id': 256, 'action': 'job_submitted', 'payload': '{"dataset":"ae566ddb6629460fb223c69fe65cd369","job":"f845adec46a0475db47e23beedb8d63f"}'}
+{'id': 257, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"f845adec46a0475db47e23beedb8d63f","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '6c9b34b96363425cb44be867950c6957', 'name': 'Screening study 7122', 'kind': 'screening', 'created': '2026-10-18T20:49:34.453996+00:00'}
+datasets
+{'id': 'd088b072a8b84493951fb59d859fb511', 'revision': 1, 'sha': 'a15f6e8a5c932d3f9b8d577a13942f7523be5fd0727b39518f7fca63e7651fbf'}
+ingest_sessions
+{'id': '31bb72061bd44876b8acfed6675cbf65', 'delivery_key': 'delivery-0', 'published_dataset': 'd088b072a8b84493951fb59d859fb511'}
+{'id': '16f8065e8e5a489eae367a28a8f5abc0', 'delivery_key': 'delivery-1', 'published_dataset': 'd088b072a8b84493951fb59d859fb511'}
+jobs
+{'id': 'c6d8444c1eef42f2b9042d9db8b78221', 'dataset': 'd088b072a8b84493951fb59d859fb511', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '06675e886f0b49bca86a43e3f2b3f80e', 'dataset': 'd088b072a8b84493951fb59d859fb511', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '71ec5a8947444ca899a3eb8e0331c7dd', 'dataset': 'd088b072a8b84493951fb59d859fb511', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '99bba8868a4b445e99ae089bba3494ad', 'dataset': 'd088b072a8b84493951fb59d859fb511', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '2d3761afcd564784a78ad8317b43329c', 'dataset': 'd088b072a8b84493951fb59d859fb511', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 346, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 347, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"d158fa6c22ba07c653f8b688d50c61570cbec5770f20f486ab6f1f931a6c5716","session":"31bb72061bd44876b8acfed6675cbf65"}'}
+{'id': 348, 'action': 'imported', 'payload': '{"dataset":"d088b072a8b84493951fb59d859fb511","revision":1,"sha256":"a15f6e8a5c932d3f9b8d577a13942f7523be5fd0727b39518f7fca63e7651fbf"}'}
+{'id': 349, 'action': 'ingest_published', 'payload': '{"dataset":"d088b072a8b84493951fb59d859fb511","session":"31bb72061bd44876b8acfed6675cbf65"}'}
+{'id': 350, 'action': 'job_submitted', 'payload': '{"dataset":"d088b072a8b84493951fb59d859fb511","job":"c6d8444c1eef42f2b9042d9db8b78221"}'}
+{'id': 351, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"c6d8444c1eef42f2b9042d9db8b78221","worker":"fixture-completed"}'}
+{'id': 352, 'action': 'job_published', 'payload': '{"generation":1,"job":"c6d8444c1eef42f2b9042d9db8b78221","run":"366d593f36b44c0788cf1081a8e5eaee"}'}
+{'id': 353, 'action': 'reviewed', 'payload': '{"action":"accept","decision":23,"run":"366d593f36b44c0788cf1081a8e5eaee"}'}
+{'id': 354, 'action': 'job_submitted', 'payload': '{"dataset":"d088b072a8b84493951fb59d859fb511","job":"71ec5a8947444ca899a3eb8e0331c7dd"}'}
+{'id': 355, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"71ec5a8947444ca899a3eb8e0331c7dd","worker":"fixture-staged"}'}
+{'id': 356, 'action': 'job_submitted', 'payload': '{"dataset":"d088b072a8b84493951fb59d859fb511","job":"06675e886f0b49bca86a43e3f2b3f80e"}'}
+{'id': 357, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"5619d2a497119bc545f95dddf57fdbe8064f7f91f66e2c50dd29a0351c4fbd9d","session":"16f8065e8e5a489eae367a28a8f5abc0"}'}
+{'id': 358, 'action': 'ingest_published', 'payload': '{"dataset":"d088b072a8b84493951fb59d859fb511","session":"16f8065e8e5a489eae367a28a8f5abc0"}'}
+{'id': 359, 'action': 'job_submitted', 'payload': '{"dataset":"d088b072a8b84493951fb59d859fb511","job":"2d3761afcd564784a78ad8317b43329c"}'}
+{'id': 360, 'action': 'job_submitted', 'payload': '{"dataset":"d088b072a8b84493951fb59d859fb511","job":"99bba8868a4b445e99ae089bba3494ad"}'}
+{'id': 361, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"99bba8868a4b445e99ae089bba3494ad","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '781263227c074f52bfc184b54a1071ad', 'name': 'Screening study 7127', 'kind': 'screening', 'created': '2026-10-18T20:49:34.542948+00:00'}
+datasets
+{'id': '06950075e5f84c63895a611f8fa4d395', 'revision': 1, 'sha': 'e5fe57b075a5f3fac72eef5e8200fe84f48531eeede173aa42fd776472929908'}
+ingest_sessions
+{'id': '73535d623e5c4903b47b3c6270ab2ec4', 'delivery_key': 'delivery-0', 'published_dataset': '06950075e5f84c63895a611f8fa4d395'}
+{'id': 'addf090a36d542cca09a9848b1d4c000', 'delivery_key': 'delivery-1', 'published_dataset': '06950075e5f84c63895a611f8fa4d395'}
+{'id': '982f7c4ce9b44d1f879dbfe081806c89', 'delivery_key': 'delivery-2', 'published_dataset': '06950075e5f84c63895a611f8fa4d395'}
+jobs
+{'id': '4253bcec05c2458393ebfd963be75af7', 'dataset': '06950075e5f84c63895a611f8fa4d395', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '07d06526d77e4c41b1e343be4cb04efd', 'dataset': '06950075e5f84c63895a611f8fa4d395', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '6d2be9e0fd4044d687ff33663bd63bc4', 'dataset': '06950075e5f84c63895a611f8fa4d395', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'e0ba1dacb58f410c86b78317e3e50864', 'dataset': '06950075e5f84c63895a611f8fa4d395', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '8493139152de47888888a500748dde77', 'dataset': '06950075e5f84c63895a611f8fa4d395', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '1fc7c627922a494fa147172d567b25b2', 'dataset': '06950075e5f84c63895a611f8fa4d395', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 431, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 432, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"f52ebffcfe09a41830c7c0a1edb3a8514510d5b10a1d7fc1557830800c227cec","session":"73535d623e5c4903b47b3c6270ab2ec4"}'}
+{'id': 433, 'action': 'imported', 'payload': '{"dataset":"06950075e5f84c63895a611f8fa4d395","revision":1,"sha256":"e5fe57b075a5f3fac72eef5e8200fe84f48531eeede173aa42fd776472929908"}'}
+{'id': 434, 'action': 'ingest_published', 'payload': '{"dataset":"06950075e5f84c63895a611f8fa4d395","session":"73535d623e5c4903b47b3c6270ab2ec4"}'}
+{'id': 435, 'action': 'job_submitted', 'payload': '{"dataset":"06950075e5f84c63895a611f8fa4d395","job":"4253bcec05c2458393ebfd963be75af7"}'}
+{'id': 436, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"4253bcec05c2458393ebfd963be75af7","worker":"fixture-completed"}'}
+{'id': 437, 'action': 'job_published', 'payload': '{"generation":1,"job":"4253bcec05c2458393ebfd963be75af7","run":"ba2c248accf443ebb6b3afc311453975"}'}
+{'id': 438, 'action': 'reviewed', 'payload': '{"action":"accept","decision":28,"run":"ba2c248accf443ebb6b3afc311453975"}'}
+{'id': 439, 'action': 'job_submitted', 'payload': '{"dataset":"06950075e5f84c63895a611f8fa4d395","job":"e0ba1dacb58f410c86b78317e3e50864"}'}
+{'id': 440, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"e0ba1dacb58f410c86b78317e3e50864","worker":"fixture-staged"}'}
+{'id': 441, 'action': 'job_submitted', 'payload': '{"dataset":"06950075e5f84c63895a611f8fa4d395","job":"6d2be9e0fd4044d687ff33663bd63bc4"}'}
+{'id': 442, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"7c8d36d43e302928f51b6d23a49e77c0badc08fec05ef282329bff86ea27635b","session":"addf090a36d542cca09a9848b1d4c000"}'}
+{'id': 443, 'action': 'ingest_published', 'payload': '{"dataset":"06950075e5f84c63895a611f8fa4d395","session":"addf090a36d542cca09a9848b1d4c000"}'}
+{'id': 444, 'action': 'job_submitted', 'payload': '{"dataset":"06950075e5f84c63895a611f8fa4d395","job":"1fc7c627922a494fa147172d567b25b2"}'}
+{'id': 445, 'action': 'job_submitted', 'payload': '{"dataset":"06950075e5f84c63895a611f8fa4d395","job":"8493139152de47888888a500748dde77"}'}
+{'id': 446, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"8493139152de47888888a500748dde77","worker":"fixture-staged-after"}'}
+{'id': 447, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"4fcc68acbcc91eec08486df32f471422ad9334c0828a4677f292c8b589bdc025","session":"982f7c4ce9b44d1f879dbfe081806c89"}'}
+{'id': 448, 'action': 'ingest_published', 'payload': '{"dataset":"06950075e5f84c63895a611f8fa4d395","session":"982f7c4ce9b44d1f879dbfe081806c89"}'}
+{'id': 449, 'action': 'job_submitted', 'payload': '{"dataset":"06950075e5f84c63895a611f8fa4d395","job":"07d06526d77e4c41b1e343be4cb04efd"}'}
+
+STUDY {'id': '7c3164c9b2fa462a9b030d8369eb78e5', 'name': 'Screening study 7121', 'kind': 'screening', 'created': '2026-10-18T20:49:34.450087+00:00'}
+datasets
+{'id': 'c86f75e12041486b8748a25b34b2f2e4', 'revision': 1, 'sha': '5c51293aeb178efd29697b777f7cee9e24f92893f224dfd919de82f522d8a1e3'}
+ingest_sessions
+jobs
+events
+{'id': 341, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 342, 'action': 'imported', 'payload': '{"dataset":"c86f75e12041486b8748a25b34b2f2e4","revision":1,"sha256":"5c51293aeb178efd29697b777f7cee9e24f92893f224dfd919de82f522d8a1e3"}'}
+{'id': 343, 'action': 'analysis_started', 'payload': '{"dataset":"c86f75e12041486b8748a25b34b2f2e4","run":"8d8e8051370a4ca29ef425c48e7fcec2"}'}
+{'id': 344, 'action': 'analysis_completed', 'payload': '{"result_sha256":"180bf3caf988b61b43cf4a887d78fdbca3f74308a6b646896b3bc388578ca112","run":"8d8e8051370a4ca29ef425c48e7fcec2"}'}
+{'id': 345, 'action': 'reviewed', 'payload': '{"action":"accept","decision":22,"run":"8d8e8051370a4ca29ef425c48e7fcec2"}'}
+
+STUDY {'id': '847bb0d350e34d3bbda83e19b668628d', 'name': 'Screening study 7111', 'kind': 'screening', 'created': '2026-10-18T20:49:34.296266+00:00'}
+datasets
+{'id': '90e24bc6f8dd4a7d86216db3c2a58af0', 'revision': 1, 'sha': '819a9c8a013fdbb6cb8dd374f1397e774706e16f5b2b5e6dcce507d18fd82a25'}
+{'id': 'b067e36b8f0a48b8b2c01a964e299ae4', 'revision': 2, 'sha': '775024b587c463cc91144f6357ceef28377c880e6c447aee3bd2a84a824e457e'}
+ingest_sessions
+{'id': '10d62521875c40b2ba1378ee81dd690d', 'delivery_key': 'delivery-0', 'published_dataset': '90e24bc6f8dd4a7d86216db3c2a58af0'}
+{'id': '60f7bd3300f747079ce071b74545a612', 'delivery_key': 'delivery-1', 'published_dataset': 'b067e36b8f0a48b8b2c01a964e299ae4'}
+jobs
+{'id': 'e4517aa4281044f38de3e24ebbf4c9a9', 'dataset': '90e24bc6f8dd4a7d86216db3c2a58af0', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': 'b5466bf3365d468bb946deea2b8755cd', 'dataset': '90e24bc6f8dd4a7d86216db3c2a58af0', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '7d81dbd11cbd413b94292fd91892e405', 'dataset': '90e24bc6f8dd4a7d86216db3c2a58af0', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '37e0397b2b334905b28e0c2229b89dbc', 'dataset': 'b067e36b8f0a48b8b2c01a964e299ae4', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'feddc7555bb646e8b29f083fb65e0151', 'dataset': 'b067e36b8f0a48b8b2c01a964e299ae4', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 172, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 173, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"1680c0f057d83c2588adb5c01a6da2e8212565d4692cbdb7d6bbe0be72b8230b","session":"10d62521875c40b2ba1378ee81dd690d"}'}
+{'id': 174, 'action': 'imported', 'payload': '{"dataset":"90e24bc6f8dd4a7d86216db3c2a58af0","revision":1,"sha256":"819a9c8a013fdbb6cb8dd374f1397e774706e16f5b2b5e6dcce507d18fd82a25"}'}
+{'id': 175, 'action': 'ingest_published', 'payload': '{"dataset":"90e24bc6f8dd4a7d86216db3c2a58af0","session":"10d62521875c40b2ba1378ee81dd690d"}'}
+{'id': 176, 'action': 'job_submitted', 'payload': '{"dataset":"90e24bc6f8dd4a7d86216db3c2a58af0","job":"e4517aa4281044f38de3e24ebbf4c9a9"}'}
+{'id': 177, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"e4517aa4281044f38de3e24ebbf4c9a9","worker":"fixture-completed"}'}
+{'id': 178, 'action': 'job_published', 'payload': '{"generation":1,"job":"e4517aa4281044f38de3e24ebbf4c9a9","run":"0eeed74eacf740d9949f3a71839e8df6"}'}
+{'id': 179, 'action': 'reviewed', 'payload': '{"action":"accept","decision":12,"run":"0eeed74eacf740d9949f3a71839e8df6"}'}
+{'id': 180, 'action': 'job_submitted', 'payload': '{"dataset":"90e24bc6f8dd4a7d86216db3c2a58af0","job":"7d81dbd11cbd413b94292fd91892e405"}'}
+{'id': 181, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"7d81dbd11cbd413b94292fd91892e405","worker":"fixture-staged"}'}
+{'id': 182, 'action': 'job_submitted', 'payload': '{"dataset":"90e24bc6f8dd4a7d86216db3c2a58af0","job":"b5466bf3365d468bb946deea2b8755cd"}'}
+{'id': 183, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"16c7a118c95d193d0c90b00a0c75ccfbf0a95633036631da6984efbe396b8e36","session":"60f7bd3300f747079ce071b74545a612"}'}
+{'id': 184, 'action': 'imported', 'payload': '{"dataset":"b067e36b8f0a48b8b2c01a964e299ae4","revision":2,"sha256":"775024b587c463cc91144f6357ceef28377c880e6c447aee3bd2a84a824e457e"}'}
+{'id': 185, 'action': 'ingest_published', 'payload': '{"dataset":"b067e36b8f0a48b8b2c01a964e299ae4","session":"60f7bd3300f747079ce071b74545a612"}'}
+{'id': 186, 'action': 'job_submitted', 'payload': '{"dataset":"b067e36b8f0a48b8b2c01a964e299ae4","job":"feddc7555bb646e8b29f083fb65e0151"}'}
+{'id': 187, 'action': 'job_submitted', 'payload': '{"dataset":"b067e36b8f0a48b8b2c01a964e299ae4","job":"37e0397b2b334905b28e0c2229b89dbc"}'}
+{'id': 188, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"37e0397b2b334905b28e0c2229b89dbc","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '851bdb4c24d742ada3a6663bf3ea4c48', 'name': 'Screening study 7134', 'kind': 'screening', 'created': '2026-10-18T20:49:34.640764+00:00'}
+datasets
+{'id': '7fa243db262c43259eb768bc09ba0028', 'revision': 1, 'sha': '2cdf446390ef7ae5589c0695d2db3ea677b361aa3144fc84367282d71e2526b5'}
+{'id': '84fee2c4439b43d5af3369d6e895eed4', 'revision': 2, 'sha': '4ec90365899e4deb47c66a00d2999e90c1ac975600ed254b46a65e7df982310c'}
+ingest_sessions
+{'id': '6c7d5e20ff8548408ea9b9880a9f6b61', 'delivery_key': 'delivery-0', 'published_dataset': '7fa243db262c43259eb768bc09ba0028'}
+{'id': 'd8bc97ff0c5b4551a44fe86b55b8490d', 'delivery_key': 'delivery-1', 'published_dataset': '7fa243db262c43259eb768bc09ba0028'}
+{'id': '2508a9dc7df14be4a392d77a5595d632', 'delivery_key': 'delivery-2', 'published_dataset': '84fee2c4439b43d5af3369d6e895eed4'}
+jobs
+{'id': 'd6baa1774bde414098cf758c962bac1c', 'dataset': '7fa243db262c43259eb768bc09ba0028', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '297f220ec5154dbd9920809e5275061e', 'dataset': '7fa243db262c43259eb768bc09ba0028', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '32f23d783063454ea986d439409c57c5', 'dataset': '7fa243db262c43259eb768bc09ba0028', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '140e1336779e434e96e5d8ffd2344f50', 'dataset': '7fa243db262c43259eb768bc09ba0028', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '638aef09ab474a99bdde6e22b2532eb6', 'dataset': '84fee2c4439b43d5af3369d6e895eed4', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 521, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 522, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"71333904ac2339901646c1842ca2cac236a8531e29f84bb5a8bef201fc546753","session":"6c7d5e20ff8548408ea9b9880a9f6b61"}'}
+{'id': 523, 'action': 'imported', 'payload': '{"dataset":"7fa243db262c43259eb768bc09ba0028","revision":1,"sha256":"2cdf446390ef7ae5589c0695d2db3ea677b361aa3144fc84367282d71e2526b5"}'}
+{'id': 524, 'action': 'ingest_published', 'payload': '{"dataset":"7fa243db262c43259eb768bc09ba0028","session":"6c7d5e20ff8548408ea9b9880a9f6b61"}'}
+{'id': 525, 'action': 'job_submitted', 'payload': '{"dataset":"7fa243db262c43259eb768bc09ba0028","job":"d6baa1774bde414098cf758c962bac1c"}'}
+{'id': 526, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"d6baa1774bde414098cf758c962bac1c","worker":"fixture"}'}
+{'id': 527, 'action': 'job_published', 'payload': '{"generation":1,"job":"d6baa1774bde414098cf758c962bac1c","run":"0ec2dc91f3b342f3954a08b1d8bad215"}'}
+{'id': 528, 'action': 'reviewed', 'payload': '{"action":"accept","decision":35,"run":"0ec2dc91f3b342f3954a08b1d8bad215"}'}
+{'id': 529, 'action': 'job_submitted', 'payload': '{"dataset":"7fa243db262c43259eb768bc09ba0028","job":"297f220ec5154dbd9920809e5275061e"}'}
+{'id': 530, 'action': 'job_submitted', 'payload': '{"dataset":"7fa243db262c43259eb768bc09ba0028","job":"32f23d783063454ea986d439409c57c5"}'}
+{'id': 531, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"32f23d783063454ea986d439409c57c5","worker":"fixture"}'}
+{'id': 532, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"73b44450b3731f966dbcbefb270a0fc91c340335b67d693750066a21459bb05f","session":"d8bc97ff0c5b4551a44fe86b55b8490d"}'}
+{'id': 533, 'action': 'ingest_published', 'payload': '{"dataset":"7fa243db262c43259eb768bc09ba0028","session":"d8bc97ff0c5b4551a44fe86b55b8490d"}'}
+{'id': 534, 'action': 'job_submitted', 'payload': '{"dataset":"7fa243db262c43259eb768bc09ba0028","job":"140e1336779e434e96e5d8ffd2344f50"}'}
+{'id': 535, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"3703e3ad805e0478e383ed12d8bef70b4d984a7b1bcff8367916084a5513cefd","session":"2508a9dc7df14be4a392d77a5595d632"}'}
+{'id': 536, 'action': 'imported', 'payload': '{"dataset":"84fee2c4439b43d5af3369d6e895eed4","revision":2,"sha256":"4ec90365899e4deb47c66a00d2999e90c1ac975600ed254b46a65e7df982310c"}'}
+{'id': 537, 'action': 'ingest_published', 'payload': '{"dataset":"84fee2c4439b43d5af3369d6e895eed4","session":"2508a9dc7df14be4a392d77a5595d632"}'}
+{'id': 538, 'action': 'job_submitted', 'payload': '{"dataset":"84fee2c4439b43d5af3369d6e895eed4","job":"638aef09ab474a99bdde6e22b2532eb6"}'}
+
+STUDY {'id': '86fc18190ec94e6bbd0e608eb71de737', 'name': 'Screening study 7113', 'kind': 'screening', 'created': '2026-10-18T20:49:34.326638+00:00'}
+datasets
+{'id': '7aa1ebfc4e94441c95294de6194a83e6', 'revision': 1, 'sha': '45844ef3236570c94e8bd28f4fed3a95dd3d72358574032e70413ddc98ff795b'}
+ingest_sessions
+{'id': '2f464b210f09454693ddcb16f89a5813', 'delivery_key': 'delivery-0', 'published_dataset': '7aa1ebfc4e94441c95294de6194a83e6'}
+{'id': 'b4274c6ecc0641c3b9c32e29a9356231', 'delivery_key': 'delivery-1', 'published_dataset': '7aa1ebfc4e94441c95294de6194a83e6'}
+{'id': '4097340dbb2d4c7c99f2917bb6034e11', 'delivery_key': 'delivery-2', 'published_dataset': '7aa1ebfc4e94441c95294de6194a83e6'}
+jobs
+{'id': 'c6933432965c43758a73cc0c6f9c5a1b', 'dataset': '7aa1ebfc4e94441c95294de6194a83e6', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '01a6325f845247ca8903a761b456f062', 'dataset': '7aa1ebfc4e94441c95294de6194a83e6', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'c0a7bfec2fc942e8b436a1eabb911430', 'dataset': '7aa1ebfc4e94441c95294de6194a83e6', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '7fcf18af71c94f5f96118ba43c0e2f30', 'dataset': '7aa1ebfc4e94441c95294de6194a83e6', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '7a82093925014e5d8aa1b7f07ad52d8b', 'dataset': '7aa1ebfc4e94441c95294de6194a83e6', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '4e516b9734b8475b95b124f38da6ba0e', 'dataset': '7aa1ebfc4e94441c95294de6194a83e6', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 205, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 206, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"d9ad255a46b1e2b9fdb352d2787b2aac8a1ca5efbe5939f017087d319a382078","session":"2f464b210f09454693ddcb16f89a5813"}'}
+{'id': 207, 'action': 'imported', 'payload': '{"dataset":"7aa1ebfc4e94441c95294de6194a83e6","revision":1,"sha256":"45844ef3236570c94e8bd28f4fed3a95dd3d72358574032e70413ddc98ff795b"}'}
+{'id': 208, 'action': 'ingest_published', 'payload': '{"dataset":"7aa1ebfc4e94441c95294de6194a83e6","session":"2f464b210f09454693ddcb16f89a5813"}'}
+{'id': 209, 'action': 'job_submitted', 'payload': '{"dataset":"7aa1ebfc4e94441c95294de6194a83e6","job":"c6933432965c43758a73cc0c6f9c5a1b"}'}
+{'id': 210, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"c6933432965c43758a73cc0c6f9c5a1b","worker":"fixture-completed"}'}
+{'id': 211, 'action': 'job_published', 'payload': '{"generation":1,"job":"c6933432965c43758a73cc0c6f9c5a1b","run":"0673f1ffd6884287842646e4fd031fad"}'}
+{'id': 212, 'action': 'reviewed', 'payload': '{"action":"accept","decision":14,"run":"0673f1ffd6884287842646e4fd031fad"}'}
+{'id': 213, 'action': 'job_submitted', 'payload': '{"dataset":"7aa1ebfc4e94441c95294de6194a83e6","job":"7fcf18af71c94f5f96118ba43c0e2f30"}'}
+{'id': 214, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"7fcf18af71c94f5f96118ba43c0e2f30","worker":"fixture-staged"}'}
+{'id': 215, 'action': 'job_submitted', 'payload': '{"dataset":"7aa1ebfc4e94441c95294de6194a83e6","job":"c0a7bfec2fc942e8b436a1eabb911430"}'}
+{'id': 216, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"dd36a79a24ffdce8ac5d86068a4b484fd29e14110923849cbbe88d272f659577","session":"b4274c6ecc0641c3b9c32e29a9356231"}'}
+{'id': 217, 'action': 'ingest_published', 'payload': '{"dataset":"7aa1ebfc4e94441c95294de6194a83e6","session":"b4274c6ecc0641c3b9c32e29a9356231"}'}
+{'id': 218, 'action': 'job_submitted', 'payload': '{"dataset":"7aa1ebfc4e94441c95294de6194a83e6","job":"4e516b9734b8475b95b124f38da6ba0e"}'}
+{'id': 219, 'action': 'job_submitted', 'payload': '{"dataset":"7aa1ebfc4e94441c95294de6194a83e6","job":"7a82093925014e5d8aa1b7f07ad52d8b"}'}
+{'id': 220, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"7a82093925014e5d8aa1b7f07ad52d8b","worker":"fixture-staged-after"}'}
+{'id': 221, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"d148fd2b9cc0f537dae1a4b6ecb9384d7ab2cf05d52a757e0c5d8242a3671886","session":"4097340dbb2d4c7c99f2917bb6034e11"}'}
+{'id': 222, 'action': 'ingest_published', 'payload': '{"dataset":"7aa1ebfc4e94441c95294de6194a83e6","session":"4097340dbb2d4c7c99f2917bb6034e11"}'}
+{'id': 223, 'action': 'job_submitted', 'payload': '{"dataset":"7aa1ebfc4e94441c95294de6194a83e6","job":"01a6325f845247ca8903a761b456f062"}'}
+
+STUDY {'id': '88c454cf4e314193922389580cd44766', 'name': 'Screening study 7112', 'kind': 'screening', 'created': '2026-10-18T20:49:34.311310+00:00'}
+datasets
+{'id': '769f75da859e4860a86c990a10c2a3cc', 'revision': 1, 'sha': '9989e4d627d0dfef5b71c0ccf52299a6d90e1c415da2c47e6064ed307f4b9fb8'}
+ingest_sessions
+{'id': '9c4684ee4ef84dfc87943118b1a41679', 'delivery_key': 'delivery-0', 'published_dataset': '769f75da859e4860a86c990a10c2a3cc'}
+{'id': '75b47dc6b6414f1f8da8b40888686c81', 'delivery_key': 'delivery-1', 'published_dataset': '769f75da859e4860a86c990a10c2a3cc'}
+jobs
+{'id': 'ce7fc5e522fd446f81965e9ee98d64e8', 'dataset': '769f75da859e4860a86c990a10c2a3cc', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': 'c467a02e806e42b8a8939d8a47677d81', 'dataset': '769f75da859e4860a86c990a10c2a3cc', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '5d21e879e0b943b687eb484ac43f2576', 'dataset': '769f75da859e4860a86c990a10c2a3cc', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '100deab576b84b60b0a5215ecaa54df8', 'dataset': '769f75da859e4860a86c990a10c2a3cc', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '735e3506954c4ef08c911228fda426fe', 'dataset': '769f75da859e4860a86c990a10c2a3cc', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 189, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 190, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"d63416bda40d5eb90503616da7c05be6080bc93f411fc21e79713ecad4d943e6","session":"9c4684ee4ef84dfc87943118b1a41679"}'}
+{'id': 191, 'action': 'imported', 'payload': '{"dataset":"769f75da859e4860a86c990a10c2a3cc","revision":1,"sha256":"9989e4d627d0dfef5b71c0ccf52299a6d90e1c415da2c47e6064ed307f4b9fb8"}'}
+{'id': 192, 'action': 'ingest_published', 'payload': '{"dataset":"769f75da859e4860a86c990a10c2a3cc","session":"9c4684ee4ef84dfc87943118b1a41679"}'}
+{'id': 193, 'action': 'job_submitted', 'payload': '{"dataset":"769f75da859e4860a86c990a10c2a3cc","job":"ce7fc5e522fd446f81965e9ee98d64e8"}'}
+{'id': 194, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"ce7fc5e522fd446f81965e9ee98d64e8","worker":"fixture-completed"}'}
+{'id': 195, 'action': 'job_published', 'payload': '{"generation":1,"job":"ce7fc5e522fd446f81965e9ee98d64e8","run":"78c63b74deab48b295a204ce86c3e2f7"}'}
+{'id': 196, 'action': 'reviewed', 'payload': '{"action":"accept","decision":13,"run":"78c63b74deab48b295a204ce86c3e2f7"}'}
+{'id': 197, 'action': 'job_submitted', 'payload': '{"dataset":"769f75da859e4860a86c990a10c2a3cc","job":"5d21e879e0b943b687eb484ac43f2576"}'}
+{'id': 198, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"5d21e879e0b943b687eb484ac43f2576","worker":"fixture-staged"}'}
+{'id': 199, 'action': 'job_submitted', 'payload': '{"dataset":"769f75da859e4860a86c990a10c2a3cc","job":"c467a02e806e42b8a8939d8a47677d81"}'}
+{'id': 200, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"ac20fb5d11de28a078f532a85e2e5b7bf54313efa5a731578c046b4eb104d6a4","session":"75b47dc6b6414f1f8da8b40888686c81"}'}
+{'id': 201, 'action': 'ingest_published', 'payload': '{"dataset":"769f75da859e4860a86c990a10c2a3cc","session":"75b47dc6b6414f1f8da8b40888686c81"}'}
+{'id': 203, 'action': 'job_submitted', 'payload': '{"dataset":"769f75da859e4860a86c990a10c2a3cc","job":"100deab576b84b60b0a5215ecaa54df8"}'}
+{'id': 204, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"100deab576b84b60b0a5215ecaa54df8","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '9987f376d3f544f3a1dd4e6ee7b25dc5', 'name': 'Screening study 7124', 'kind': 'screening', 'created': '2026-10-18T20:49:34.487599+00:00'}
+datasets
+{'id': 'c89cc9f6aaf942e4839ed5e8d764324b', 'revision': 1, 'sha': '1155037cab2671be0052330d6b86d5b7ac9299a9c9566bf9d0dbafcf5c934492'}
+{'id': 'c2bb5b8186df4b6eabdf061c066a1618', 'revision': 2, 'sha': '990bf23dfbd047e9a316211cc7616fbb64c5344a8c4de703224523e07641a65b'}
+ingest_sessions
+{'id': '37e47a25799a4780ab76453b7a57f2b8', 'delivery_key': 'delivery-0', 'published_dataset': 'c89cc9f6aaf942e4839ed5e8d764324b'}
+{'id': '1887d07647ad4169971730a82939ef8b', 'delivery_key': 'delivery-1', 'published_dataset': 'c2bb5b8186df4b6eabdf061c066a1618'}
+jobs
+{'id': 'd94dbbfc443d426a9a20a394cb2ed382', 'dataset': 'c2bb5b8186df4b6eabdf061c066a1618', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '478a7944404644cebdecb3230447f7f7', 'dataset': 'c2bb5b8186df4b6eabdf061c066a1618', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '9f2c643d006e433fa12d80f6cafce17d', 'dataset': 'c89cc9f6aaf942e4839ed5e8d764324b', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '736e6086c2c0404c92c2f8264ab14173', 'dataset': 'c89cc9f6aaf942e4839ed5e8d764324b', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '554176d9b5974618b5b926c6dfe28189', 'dataset': 'c89cc9f6aaf942e4839ed5e8d764324b', 'state': 'running', 'generation': 1, 'staged': 1}
+events
+{'id': 378, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 379, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"aecc58d7c1a0bff3de1a9e15b4b9cff868248fbe3bdd4dcd8840ba129c59a948","session":"37e47a25799a4780ab76453b7a57f2b8"}'}
+{'id': 380, 'action': 'imported', 'payload': '{"dataset":"c89cc9f6aaf942e4839ed5e8d764324b","revision":1,"sha256":"1155037cab2671be0052330d6b86d5b7ac9299a9c9566bf9d0dbafcf5c934492"}'}
+{'id': 381, 'action': 'ingest_published', 'payload': '{"dataset":"c89cc9f6aaf942e4839ed5e8d764324b","session":"37e47a25799a4780ab76453b7a57f2b8"}'}
+{'id': 382, 'action': 'job_submitted', 'payload': '{"dataset":"c89cc9f6aaf942e4839ed5e8d764324b","job":"9f2c643d006e433fa12d80f6cafce17d"}'}
+{'id': 383, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"9f2c643d006e433fa12d80f6cafce17d","worker":"fixture-completed"}'}
+{'id': 384, 'action': 'job_published', 'payload': '{"generation":1,"job":"9f2c643d006e433fa12d80f6cafce17d","run":"c5405b8187734bfeb3788a3ea7da93ce"}'}
+{'id': 385, 'action': 'reviewed', 'payload': '{"action":"accept","decision":25,"run":"c5405b8187734bfeb3788a3ea7da93ce"}'}
+{'id': 386, 'action': 'job_submitted', 'payload': '{"dataset":"c89cc9f6aaf942e4839ed5e8d764324b","job":"554176d9b5974618b5b926c6dfe28189"}'}
+{'id': 387, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"554176d9b5974618b5b926c6dfe28189","worker":"fixture-staged"}'}
+{'id': 388, 'action': 'job_submitted', 'payload': '{"dataset":"c89cc9f6aaf942e4839ed5e8d764324b","job":"736e6086c2c0404c92c2f8264ab14173"}'}
+{'id': 389, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"d9019e18f50d06b6f72b5640ab57b5d123f408cb1bfaea299f515a2e3ebc2a26","session":"1887d07647ad4169971730a82939ef8b"}'}
+{'id': 390, 'action': 'imported', 'payload': '{"dataset":"c2bb5b8186df4b6eabdf061c066a1618","revision":2,"sha256":"990bf23dfbd047e9a316211cc7616fbb64c5344a8c4de703224523e07641a65b"}'}
+{'id': 391, 'action': 'ingest_published', 'payload': '{"dataset":"c2bb5b8186df4b6eabdf061c066a1618","session":"1887d07647ad4169971730a82939ef8b"}'}
+{'id': 392, 'action': 'job_submitted', 'payload': '{"dataset":"c2bb5b8186df4b6eabdf061c066a1618","job":"478a7944404644cebdecb3230447f7f7"}'}
+{'id': 393, 'action': 'job_submitted', 'payload': '{"dataset":"c2bb5b8186df4b6eabdf061c066a1618","job":"d94dbbfc443d426a9a20a394cb2ed382"}'}
+{'id': 394, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"d94dbbfc443d426a9a20a394cb2ed382","worker":"fixture-staged-after"}'}
+
+STUDY {'id': '99b804e2c26d4c84aca54fdb55e56e73', 'name': 'Screening study 7138', 'kind': 'screening', 'created': '2026-10-18T20:49:34.699572+00:00'}
+datasets
+{'id': '76da303dc1bd44a79af7110d7e0d0dd0', 'revision': 1, 'sha': '938ff04e3145c88b68513e9815b5cad4d615c4a37ccf2d88ef3d7486c72e8aa2'}
+{'id': 'preview-83bebb72202643519e29c10fc179871f', 'revision': 2, 'sha': '69eaeebcb18d61cb60931f8efae90b7aa643f088d2cc42bd1d93f3757c97a2cf'}
+{'id': 'preview-3709b68a1f5b4473bbcd8a51a20c7074', 'revision': 3, 'sha': '74f9d8f843d839bd927d3bd34fdde60a4848a217a1ea5f1f5539cfeb2302a79c'}
+ingest_sessions
+{'id': '8311b449852b4cb98f5576d7f4ebbab9', 'delivery_key': 'delivery-0', 'published_dataset': '76da303dc1bd44a79af7110d7e0d0dd0'}
+{'id': '83bebb72202643519e29c10fc179871f', 'delivery_key': 'delivery-1', 'published_dataset': '76da303dc1bd44a79af7110d7e0d0dd0'}
+{'id': '3709b68a1f5b4473bbcd8a51a20c7074', 'delivery_key': 'delivery-2', 'published_dataset': '76da303dc1bd44a79af7110d7e0d0dd0'}
+jobs
+{'id': 'c892b379e2a94695981ecb8658f17e0b', 'dataset': '76da303dc1bd44a79af7110d7e0d0dd0', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '31d5403ad34f4318ad8f5ca2ffbfc0a5', 'dataset': '76da303dc1bd44a79af7110d7e0d0dd0', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '14cd20f6f1a0487d808841e7631e54b9', 'dataset': 'preview-3709b68a1f5b4473bbcd8a51a20c7074', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'd97ef6379eb4407d9129e1e070038c89', 'dataset': 'preview-3709b68a1f5b4473bbcd8a51a20c7074', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'a9e7fae36f5e46afbc1e61c61e4bff00', 'dataset': 'preview-3709b68a1f5b4473bbcd8a51a20c7074', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 585, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 586, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"129c0367403ce01becdc1e774b3af52ae2e18cdb8d63792f9e12b22914a68cc2","session":"8311b449852b4cb98f5576d7f4ebbab9"}'}
+{'id': 587, 'action': 'imported', 'payload': '{"dataset":"76da303dc1bd44a79af7110d7e0d0dd0","revision":1,"sha256":"938ff04e3145c88b68513e9815b5cad4d615c4a37ccf2d88ef3d7486c72e8aa2"}'}
+{'id': 588, 'action': 'ingest_published', 'payload': '{"dataset":"76da303dc1bd44a79af7110d7e0d0dd0","session":"8311b449852b4cb98f5576d7f4ebbab9"}'}
+{'id': 589, 'action': 'job_submitted', 'payload': '{"dataset":"76da303dc1bd44a79af7110d7e0d0dd0","job":"c892b379e2a94695981ecb8658f17e0b"}'}
+{'id': 590, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"c892b379e2a94695981ecb8658f17e0b","worker":"fixture"}'}
+{'id': 591, 'action': 'job_published', 'payload': '{"generation":1,"job":"c892b379e2a94695981ecb8658f17e0b","run":"670ae7e55f8e43e68c058c45221a8cff"}'}
+{'id': 592, 'action': 'reviewed', 'payload': '{"action":"accept","decision":39,"run":"670ae7e55f8e43e68c058c45221a8cff"}'}
+{'id': 593, 'action': 'job_submitted', 'payload': '{"dataset":"76da303dc1bd44a79af7110d7e0d0dd0","job":"d97ef6379eb4407d9129e1e070038c89"}'}
+{'id': 594, 'action': 'job_submitted', 'payload': '{"dataset":"76da303dc1bd44a79af7110d7e0d0dd0","job":"31d5403ad34f4318ad8f5ca2ffbfc0a5"}'}
+{'id': 595, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"31d5403ad34f4318ad8f5ca2ffbfc0a5","worker":"fixture"}'}
+{'id': 596, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"caad013a214c72669eb228a68a6b2769ffa9c24021c5ded7de64b3e72b6286b4","session":"83bebb72202643519e29c10fc179871f"}'}
+{'id': 597, 'action': 'ingest_published', 'payload': '{"dataset":"76da303dc1bd44a79af7110d7e0d0dd0","session":"83bebb72202643519e29c10fc179871f"}'}
+{'id': 598, 'action': 'job_submitted', 'payload': '{"dataset":"76da303dc1bd44a79af7110d7e0d0dd0","job":"a9e7fae36f5e46afbc1e61c61e4bff00"}'}
+{'id': 599, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"7b4fb49b06e63f859dd050c6d5dc610875f670e3b8d6fec156dbfb0f80a40d6c","session":"3709b68a1f5b4473bbcd8a51a20c7074"}'}
+{'id': 600, 'action': 'ingest_published', 'payload': '{"dataset":"76da303dc1bd44a79af7110d7e0d0dd0","session":"3709b68a1f5b4473bbcd8a51a20c7074"}'}
+{'id': 601, 'action': 'job_submitted', 'payload': '{"dataset":"76da303dc1bd44a79af7110d7e0d0dd0","job":"14cd20f6f1a0487d808841e7631e54b9"}'}
+{'id': 602, 'action': 'transfer_evidence_recovered_preview', 'payload': '{"jobs":[{"from_dataset":"76da303dc1bd44a79af7110d7e0d0dd0","job":"d97ef6379eb4407d9129e1e070038c89","to_dataset":"preview-3709b68a1f5b4473bbcd8a51a20c7074"},{"from_dataset":"76da303dc1bd44a79af7110d7e0d0dd0","job":"a9e7fae36f5e46afbc1e61c61e4bff00","to_dataset":"preview-3709b68a1f5b4473bbcd8a51a20c7074"},{"from_dataset":"76da303dc1bd44a79af7110d7e0d0dd0","job":"14cd20f6f1a0487d808841e7631e54b9","to_dataset":"preview-3709b68a1f5b4473bbcd8a51a20c7074"}],"sessions":[{"from_dataset":"76da303dc1bd44a79af7110d7e0d0dd0","session":"83bebb72202643519e29c10fc179871f","sha256":"69eaeebcb18d61cb60931f8efae90b7aa643f088d2cc42bd1d93f3757c97a2cf","to_dataset":"preview-83bebb72202643519e29c10fc179871f"},{"from_dataset":"76da303dc1bd44a79af7110d7e0d0dd0","session":"3709b68a1f5b4473bbcd8a51a20c7074","sha256":"74f9d8f843d839bd927d3bd34fdde60a4848a217a1ea5f1f5539cfeb2302a79c","to_dataset":"preview-3709b68a1f5b4473bbcd8a51a20c7074"}],"version":"transfer-evidence-preview-0"}'}
+
+STUDY {'id': 'a8f5b45e961542728c5357d0443ef7e8', 'name': 'Screening study 7107', 'kind': 'screening', 'created': '2026-10-18T20:49:34.229915+00:00'}
+datasets
+{'id': '8e6b96ebe17742708a1792a6a988dcfc', 'revision': 1, 'sha': '1328c2162008f151dad27677aaafbc22684736f61692e003cc08d33ef6cb80cb'}
+ingest_sessions
+{'id': '6e577f31b84b448eb29cb64b0d3feee9', 'delivery_key': 'delivery-0', 'published_dataset': '8e6b96ebe17742708a1792a6a988dcfc'}
+{'id': '92eb075820c8461c8c5872ee02e4af89', 'delivery_key': 'delivery-1', 'published_dataset': '8e6b96ebe17742708a1792a6a988dcfc'}
+{'id': 'e0628c2f4c9c4e6793c3434910022910', 'delivery_key': 'delivery-2', 'published_dataset': '8e6b96ebe17742708a1792a6a988dcfc'}
+jobs
+{'id': 'c609b269a323465581d8ed1e1996882f', 'dataset': '8e6b96ebe17742708a1792a6a988dcfc', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '30027b95a9ad4a678848c9c2ef8ff83c', 'dataset': '8e6b96ebe17742708a1792a6a988dcfc', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'fd04a32f701243059a4db30184e3c9e7', 'dataset': '8e6b96ebe17742708a1792a6a988dcfc', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'd3fb4c3f81b345f4be06a7713485e427', 'dataset': '8e6b96ebe17742708a1792a6a988dcfc', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '449bfdb2439242da8a9680b5b67f3329', 'dataset': '8e6b96ebe17742708a1792a6a988dcfc', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '34fc0d9a8db24bfba2493d83029f7048', 'dataset': '8e6b96ebe17742708a1792a6a988dcfc', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 104, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 105, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"9f863d32ebfceaeb19ea899269ac3a354e948f95f37cd53e61fdeb365769cb71","session":"6e577f31b84b448eb29cb64b0d3feee9"}'}
+{'id': 106, 'action': 'imported', 'payload': '{"dataset":"8e6b96ebe17742708a1792a6a988dcfc","revision":1,"sha256":"1328c2162008f151dad27677aaafbc22684736f61692e003cc08d33ef6cb80cb"}'}
+{'id': 107, 'action': 'ingest_published', 'payload': '{"dataset":"8e6b96ebe17742708a1792a6a988dcfc","session":"6e577f31b84b448eb29cb64b0d3feee9"}'}
+{'id': 108, 'action': 'job_submitted', 'payload': '{"dataset":"8e6b96ebe17742708a1792a6a988dcfc","job":"c609b269a323465581d8ed1e1996882f"}'}
+{'id': 109, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"c609b269a323465581d8ed1e1996882f","worker":"fixture-completed"}'}
+{'id': 110, 'action': 'job_published', 'payload': '{"generation":1,"job":"c609b269a323465581d8ed1e1996882f","run":"39e3db2191ca4e2e8eabf50ce7b108bd"}'}
+{'id': 111, 'action': 'reviewed', 'payload': '{"action":"accept","decision":8,"run":"39e3db2191ca4e2e8eabf50ce7b108bd"}'}
+{'id': 112, 'action': 'job_submitted', 'payload': '{"dataset":"8e6b96ebe17742708a1792a6a988dcfc","job":"d3fb4c3f81b345f4be06a7713485e427"}'}
+{'id': 113, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"d3fb4c3f81b345f4be06a7713485e427","worker":"fixture-staged"}'}
+{'id': 114, 'action': 'job_submitted', 'payload': '{"dataset":"8e6b96ebe17742708a1792a6a988dcfc","job":"fd04a32f701243059a4db30184e3c9e7"}'}
+{'id': 115, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"1f9df44016830211e499540e7dca884c1ec624d5f0e1b250ae42232ec86eccdc","session":"92eb075820c8461c8c5872ee02e4af89"}'}
+{'id': 116, 'action': 'ingest_published', 'payload': '{"dataset":"8e6b96ebe17742708a1792a6a988dcfc","session":"92eb075820c8461c8c5872ee02e4af89"}'}
+{'id': 117, 'action': 'job_submitted', 'payload': '{"dataset":"8e6b96ebe17742708a1792a6a988dcfc","job":"34fc0d9a8db24bfba2493d83029f7048"}'}
+{'id': 118, 'action': 'job_submitted', 'payload': '{"dataset":"8e6b96ebe17742708a1792a6a988dcfc","job":"449bfdb2439242da8a9680b5b67f3329"}'}
+{'id': 119, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"449bfdb2439242da8a9680b5b67f3329","worker":"fixture-staged-after"}'}
+{'id': 120, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"0b43d38a2193e416c6ebabc4ebb3094382fa5802a609ad56ffb607f01f9fb2d0","session":"e0628c2f4c9c4e6793c3434910022910"}'}
+{'id': 121, 'action': 'ingest_published', 'payload': '{"dataset":"8e6b96ebe17742708a1792a6a988dcfc","session":"e0628c2f4c9c4e6793c3434910022910"}'}
+{'id': 122, 'action': 'job_submitted', 'payload': '{"dataset":"8e6b96ebe17742708a1792a6a988dcfc","job":"30027b95a9ad4a678848c9c2ef8ff83c"}'}
+
+STUDY {'id': 'a9955757c327403da641a2676f574141', 'name': 'Screening study 7100', 'kind': 'screening', 'created': '2026-10-18T20:49:33.621296+00:00'}
+datasets
+{'id': '72e2f38c12764c808b475f92f38d7c45', 'revision': 1, 'sha': 'a67b13fa960a34ebff591627a0ece9f76f559564a6bac47d51813bbe26fc28e0'}
+{'id': 'e92d7a78f328475ab88429f442f53ed2', 'revision': 2, 'sha': '975514e4d2c643491492f2ad465a251e684d0e293c7ef47705491b3e9a3bab67'}
+ingest_sessions
+{'id': '940fd1940e524287822427699ffeca1e', 'delivery_key': 'delivery-0', 'published_dataset': '72e2f38c12764c808b475f92f38d7c45'}
+{'id': 'cde5edc1c07d4779a7e8e680e9136df5', 'delivery_key': 'delivery-1', 'published_dataset': '72e2f38c12764c808b475f92f38d7c45'}
+jobs
+{'id': '5b47b47ea5f142d0a8fa03d3d78dcf03', 'dataset': '72e2f38c12764c808b475f92f38d7c45', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '03687f5c8ea54277958489570a2e517b', 'dataset': '72e2f38c12764c808b475f92f38d7c45', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '82355d4ff27c491cad33ca134d5ee0ce', 'dataset': '72e2f38c12764c808b475f92f38d7c45', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '83e6d520000d4c8bb0f657f4f1355074', 'dataset': '72e2f38c12764c808b475f92f38d7c45', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '28d13ef3b51a40dfa26f9f312b99554d', 'dataset': '72e2f38c12764c808b475f92f38d7c45', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 1, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 2, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"f1155a885b122e47fd5d2ca50e1fbf507823f887e79698bcd251a98c7242704e","session":"940fd1940e524287822427699ffeca1e"}'}
+{'id': 3, 'action': 'imported', 'payload': '{"dataset":"72e2f38c12764c808b475f92f38d7c45","revision":1,"sha256":"a67b13fa960a34ebff591627a0ece9f76f559564a6bac47d51813bbe26fc28e0"}'}
+{'id': 4, 'action': 'ingest_published', 'payload': '{"dataset":"72e2f38c12764c808b475f92f38d7c45","session":"940fd1940e524287822427699ffeca1e"}'}
+{'id': 5, 'action': 'job_submitted', 'payload': '{"dataset":"72e2f38c12764c808b475f92f38d7c45","job":"5b47b47ea5f142d0a8fa03d3d78dcf03"}'}
+{'id': 6, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"5b47b47ea5f142d0a8fa03d3d78dcf03","worker":"fixture-completed"}'}
+{'id': 7, 'action': 'job_published', 'payload': '{"generation":1,"job":"5b47b47ea5f142d0a8fa03d3d78dcf03","run":"87e13dded9364037b08e2acb91efa04a"}'}
+{'id': 8, 'action': 'reviewed', 'payload': '{"action":"accept","decision":1,"run":"87e13dded9364037b08e2acb91efa04a"}'}
+{'id': 9, 'action': 'job_submitted', 'payload': '{"dataset":"72e2f38c12764c808b475f92f38d7c45","job":"82355d4ff27c491cad33ca134d5ee0ce"}'}
+{'id': 10, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"82355d4ff27c491cad33ca134d5ee0ce","worker":"fixture-staged"}'}
+{'id': 11, 'action': 'job_submitted', 'payload': '{"dataset":"72e2f38c12764c808b475f92f38d7c45","job":"03687f5c8ea54277958489570a2e517b"}'}
+{'id': 12, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"95fc65866295ee2f2950d79904a5c972271151a6420cb82808d86b43ff6ef3b9","session":"cde5edc1c07d4779a7e8e680e9136df5"}'}
+{'id': 13, 'action': 'ingest_published', 'payload': '{"dataset":"72e2f38c12764c808b475f92f38d7c45","session":"cde5edc1c07d4779a7e8e680e9136df5"}'}
+{'id': 14, 'action': 'job_submitted', 'payload': '{"dataset":"72e2f38c12764c808b475f92f38d7c45","job":"28d13ef3b51a40dfa26f9f312b99554d"}'}
+{'id': 15, 'action': 'job_submitted', 'payload': '{"dataset":"72e2f38c12764c808b475f92f38d7c45","job":"83e6d520000d4c8bb0f657f4f1355074"}'}
+{'id': 16, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"83e6d520000d4c8bb0f657f4f1355074","worker":"fixture-staged-after"}'}
+{'id': 17, 'action': 'imported', 'payload': '{"dataset":"e92d7a78f328475ab88429f442f53ed2","revision":2,"sha256":"975514e4d2c643491492f2ad465a251e684d0e293c7ef47705491b3e9a3bab67"}'}
+
+STUDY {'id': 'a9f225a576ce44bdad197d5d2c05fb51', 'name': 'Screening study 7104', 'kind': 'screening', 'created': '2026-10-18T20:49:34.187409+00:00'}
+datasets
+{'id': '6c8f980197d349a5b0636f3e5d130d48', 'revision': 1, 'sha': 'fa53c9b03132fcf4257e47293253611ba73bc33ad59319fe2208f708113b1d37'}
+ingest_sessions
+{'id': 'c9ade4f9f7d14b45af29d7f5614577d2', 'delivery_key': 'delivery-0', 'published_dataset': '6c8f980197d349a5b0636f3e5d130d48'}
+{'id': '9c991a671e1e4cf7bf8d12a79a12d8ba', 'delivery_key': 'delivery-1', 'published_dataset': '6c8f980197d349a5b0636f3e5d130d48'}
+jobs
+{'id': '03dc882bca28426ba0923eb0e3c41dd8', 'dataset': '6c8f980197d349a5b0636f3e5d130d48', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '2b9aefd1cd044d3fac29d1c3d9c6a01c', 'dataset': '6c8f980197d349a5b0636f3e5d130d48', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '57dd387a003c4bc1bd6ac3a805a9d072', 'dataset': '6c8f980197d349a5b0636f3e5d130d48', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '7ef0bbfdbb124ef290fba5268f47bc75', 'dataset': '6c8f980197d349a5b0636f3e5d130d48', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'f40e142959f54ea4af7458a8c4a55096', 'dataset': '6c8f980197d349a5b0636f3e5d130d48', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 67, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 68, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"7bf6b7fb98041edc3cc8c127dfe9e3f5813b24e79359dafc4dd60af8281e4883","session":"c9ade4f9f7d14b45af29d7f5614577d2"}'}
+{'id': 69, 'action': 'imported', 'payload': '{"dataset":"6c8f980197d349a5b0636f3e5d130d48","revision":1,"sha256":"fa53c9b03132fcf4257e47293253611ba73bc33ad59319fe2208f708113b1d37"}'}
+{'id': 70, 'action': 'ingest_published', 'payload': '{"dataset":"6c8f980197d349a5b0636f3e5d130d48","session":"c9ade4f9f7d14b45af29d7f5614577d2"}'}
+{'id': 71, 'action': 'job_submitted', 'payload': '{"dataset":"6c8f980197d349a5b0636f3e5d130d48","job":"03dc882bca28426ba0923eb0e3c41dd8"}'}
+{'id': 72, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"03dc882bca28426ba0923eb0e3c41dd8","worker":"fixture-completed"}'}
+{'id': 73, 'action': 'job_published', 'payload': '{"generation":1,"job":"03dc882bca28426ba0923eb0e3c41dd8","run":"d0320558e479449793476831a8cde1ac"}'}
+{'id': 74, 'action': 'reviewed', 'payload': '{"action":"accept","decision":5,"run":"d0320558e479449793476831a8cde1ac"}'}
+{'id': 75, 'action': 'job_submitted', 'payload': '{"dataset":"6c8f980197d349a5b0636f3e5d130d48","job":"57dd387a003c4bc1bd6ac3a805a9d072"}'}
+{'id': 76, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"57dd387a003c4bc1bd6ac3a805a9d072","worker":"fixture-staged"}'}
+{'id': 77, 'action': 'job_submitted', 'payload': '{"dataset":"6c8f980197d349a5b0636f3e5d130d48","job":"2b9aefd1cd044d3fac29d1c3d9c6a01c"}'}
+{'id': 78, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"91c9a651ae75792250714be63162d09c35474bea4cd1c13130ac545fd50ae53a","session":"9c991a671e1e4cf7bf8d12a79a12d8ba"}'}
+{'id': 79, 'action': 'ingest_published', 'payload': '{"dataset":"6c8f980197d349a5b0636f3e5d130d48","session":"9c991a671e1e4cf7bf8d12a79a12d8ba"}'}
+{'id': 80, 'action': 'job_submitted', 'payload': '{"dataset":"6c8f980197d349a5b0636f3e5d130d48","job":"f40e142959f54ea4af7458a8c4a55096"}'}
+{'id': 81, 'action': 'job_submitted', 'payload': '{"dataset":"6c8f980197d349a5b0636f3e5d130d48","job":"7ef0bbfdbb124ef290fba5268f47bc75"}'}
+{'id': 82, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"7ef0bbfdbb124ef290fba5268f47bc75","worker":"fixture-staged-after"}'}
+
+STUDY {'id': 'adb3f2a9c2934256a060ca7d6fa2b4fc', 'name': 'Screening study 7106', 'kind': 'screening', 'created': '2026-10-18T20:49:34.226476+00:00'}
+datasets
+{'id': 'e7d8212cd00041fdbcd3cf88c9110b0b', 'revision': 1, 'sha': '9f867419420fe155c1ee49a17c7ae19f117746c7dcf62a49ad70b6a1dbad8f72'}
+ingest_sessions
+jobs
+events
+{'id': 99, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 100, 'action': 'imported', 'payload': '{"dataset":"e7d8212cd00041fdbcd3cf88c9110b0b","revision":1,"sha256":"9f867419420fe155c1ee49a17c7ae19f117746c7dcf62a49ad70b6a1dbad8f72"}'}
+{'id': 101, 'action': 'analysis_started', 'payload': '{"dataset":"e7d8212cd00041fdbcd3cf88c9110b0b","run":"ded946897ed74847929472446a3d9665"}'}
+{'id': 102, 'action': 'analysis_completed', 'payload': '{"result_sha256":"325bf8906da5835b894e9bdf47164567459fc339012eee4f1b0d6dbc0ea9cea3","run":"ded946897ed74847929472446a3d9665"}'}
+{'id': 103, 'action': 'reviewed', 'payload': '{"action":"accept","decision":7,"run":"ded946897ed74847929472446a3d9665"}'}
+
+STUDY {'id': 'b72b611d310c4e5a953fed8cc6b7a326', 'name': 'Screening study 7123', 'kind': 'screening', 'created': '2026-10-18T20:49:34.471385+00:00'}
+datasets
+{'id': '6da2beee9c3e4015a343adc0db46bf5a', 'revision': 1, 'sha': '937a547959d191ab7ba7d7603d9c30ca9e905d13264b8056ea72bf29e65e6cf9'}
+ingest_sessions
+{'id': '373240f9a947453393ac470b0bf70cd3', 'delivery_key': 'delivery-0', 'published_dataset': '6da2beee9c3e4015a343adc0db46bf5a'}
+{'id': '921c3477f1bb4a9d9b80db0446867971', 'delivery_key': 'delivery-1', 'published_dataset': '6da2beee9c3e4015a343adc0db46bf5a'}
+jobs
+{'id': '33203953f27b4e83bb5f0517650621b3', 'dataset': '6da2beee9c3e4015a343adc0db46bf5a', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': 'd3f9631106b64286b9ba697496f9335b', 'dataset': '6da2beee9c3e4015a343adc0db46bf5a', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '8b794c5f48ee401796dbdb66d8606723', 'dataset': '6da2beee9c3e4015a343adc0db46bf5a', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '2cc9227f73124c47bd079f6a5e43b297', 'dataset': '6da2beee9c3e4015a343adc0db46bf5a', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '7c7cd9abc0ed4aa5939bfb65181450c7', 'dataset': '6da2beee9c3e4015a343adc0db46bf5a', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 362, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 363, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"5e9898c9096a244106e9953f6cf81c8e23cfcfd0fe4469502d548cd4cf902cf7","session":"373240f9a947453393ac470b0bf70cd3"}'}
+{'id': 364, 'action': 'imported', 'payload': '{"dataset":"6da2beee9c3e4015a343adc0db46bf5a","revision":1,"sha256":"937a547959d191ab7ba7d7603d9c30ca9e905d13264b8056ea72bf29e65e6cf9"}'}
+{'id': 365, 'action': 'ingest_published', 'payload': '{"dataset":"6da2beee9c3e4015a343adc0db46bf5a","session":"373240f9a947453393ac470b0bf70cd3"}'}
+{'id': 366, 'action': 'job_submitted', 'payload': '{"dataset":"6da2beee9c3e4015a343adc0db46bf5a","job":"33203953f27b4e83bb5f0517650621b3"}'}
+{'id': 367, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"33203953f27b4e83bb5f0517650621b3","worker":"fixture-completed"}'}
+{'id': 368, 'action': 'job_published', 'payload': '{"generation":1,"job":"33203953f27b4e83bb5f0517650621b3","run":"b42fbf725b214c53a49cb24b4162f6c4"}'}
+{'id': 369, 'action': 'reviewed', 'payload': '{"action":"accept","decision":24,"run":"b42fbf725b214c53a49cb24b4162f6c4"}'}
+{'id': 370, 'action': 'job_submitted', 'payload': '{"dataset":"6da2beee9c3e4015a343adc0db46bf5a","job":"8b794c5f48ee401796dbdb66d8606723"}'}
+{'id': 371, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"8b794c5f48ee401796dbdb66d8606723","worker":"fixture-staged"}'}
+{'id': 372, 'action': 'job_submitted', 'payload': '{"dataset":"6da2beee9c3e4015a343adc0db46bf5a","job":"d3f9631106b64286b9ba697496f9335b"}'}
+{'id': 373, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"7599852e8e4919457bb99011b8b4d249059712be0733701cde3240660e58a52f","session":"921c3477f1bb4a9d9b80db0446867971"}'}
+{'id': 374, 'action': 'ingest_published', 'payload': '{"dataset":"6da2beee9c3e4015a343adc0db46bf5a","session":"921c3477f1bb4a9d9b80db0446867971"}'}
+{'id': 376, 'action': 'job_submitted', 'payload': '{"dataset":"6da2beee9c3e4015a343adc0db46bf5a","job":"2cc9227f73124c47bd079f6a5e43b297"}'}
+{'id': 377, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"2cc9227f73124c47bd079f6a5e43b297","worker":"fixture-staged-after"}'}
+
+STUDY {'id': 'bcb3bde4b7094c45a3862313b27b30e7', 'name': 'Screening study 7114', 'kind': 'screening', 'created': '2026-10-18T20:49:34.345194+00:00'}
+datasets
+{'id': '7e6afd73c75e4859858787670bb65ce8', 'revision': 1, 'sha': '7c666ba308070f35316ff0c41089fdb641c8cec4002f654272f098b37bb1917a'}
+{'id': 'c95165db887644009f39fe9bce70a614', 'revision': 2, 'sha': 'ca2e9f9e154a7d4d063aef2665a7cc970e00c23231b2f1419ed4cde9d7020500'}
+ingest_sessions
+{'id': '82742c12ec4341e1bcf908907698800e', 'delivery_key': 'delivery-0', 'published_dataset': '7e6afd73c75e4859858787670bb65ce8'}
+{'id': 'bb9b9317a5c64b14ae2c7d5fa6c3ace7', 'delivery_key': 'delivery-1', 'published_dataset': 'c95165db887644009f39fe9bce70a614'}
+jobs
+{'id': 'cb0256bceeab4e579573dc6050f60a43', 'dataset': '7e6afd73c75e4859858787670bb65ce8', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '34fc0234a4ba4e9f8235f63a964701c8', 'dataset': '7e6afd73c75e4859858787670bb65ce8', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '9990c9de521f4a30af288d4e63f4e0d8', 'dataset': '7e6afd73c75e4859858787670bb65ce8', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '21425e0a4440403eaff07cd76771e9ea', 'dataset': 'c95165db887644009f39fe9bce70a614', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'ab46d9a0e984463f84db36db4ea0b923', 'dataset': 'c95165db887644009f39fe9bce70a614', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 224, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 225, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"ddeee7d886e5e9b39f6762b257666fec34df027835e357e134fd89887ca8ff4c","session":"82742c12ec4341e1bcf908907698800e"}'}
+{'id': 226, 'action': 'imported', 'payload': '{"dataset":"7e6afd73c75e4859858787670bb65ce8","revision":1,"sha256":"7c666ba308070f35316ff0c41089fdb641c8cec4002f654272f098b37bb1917a"}'}
+{'id': 227, 'action': 'ingest_published', 'payload': '{"dataset":"7e6afd73c75e4859858787670bb65ce8","session":"82742c12ec4341e1bcf908907698800e"}'}
+{'id': 228, 'action': 'job_submitted', 'payload': '{"dataset":"7e6afd73c75e4859858787670bb65ce8","job":"cb0256bceeab4e579573dc6050f60a43"}'}
+{'id': 229, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"cb0256bceeab4e579573dc6050f60a43","worker":"fixture-completed"}'}
+{'id': 230, 'action': 'job_published', 'payload': '{"generation":1,"job":"cb0256bceeab4e579573dc6050f60a43","run":"1ebe5cafda98491e90d06857630778f7"}'}
+{'id': 231, 'action': 'reviewed', 'payload': '{"action":"accept","decision":15,"run":"1ebe5cafda98491e90d06857630778f7"}'}
+{'id': 232, 'action': 'job_submitted', 'payload': '{"dataset":"7e6afd73c75e4859858787670bb65ce8","job":"9990c9de521f4a30af288d4e63f4e0d8"}'}
+{'id': 233, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"9990c9de521f4a30af288d4e63f4e0d8","worker":"fixture-staged"}'}
+{'id': 234, 'action': 'job_submitted', 'payload': '{"dataset":"7e6afd73c75e4859858787670bb65ce8","job":"34fc0234a4ba4e9f8235f63a964701c8"}'}
+{'id': 235, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"0324139fe8e674e5544431c6ce03db50f2aedcba219070a3e1547b67e24686ab","session":"bb9b9317a5c64b14ae2c7d5fa6c3ace7"}'}
+{'id': 236, 'action': 'imported', 'payload': '{"dataset":"c95165db887644009f39fe9bce70a614","revision":2,"sha256":"ca2e9f9e154a7d4d063aef2665a7cc970e00c23231b2f1419ed4cde9d7020500"}'}
+{'id': 237, 'action': 'ingest_published', 'payload': '{"dataset":"c95165db887644009f39fe9bce70a614","session":"bb9b9317a5c64b14ae2c7d5fa6c3ace7"}'}
+{'id': 238, 'action': 'job_submitted', 'payload': '{"dataset":"c95165db887644009f39fe9bce70a614","job":"ab46d9a0e984463f84db36db4ea0b923"}'}
+{'id': 239, 'action': 'job_submitted', 'payload': '{"dataset":"c95165db887644009f39fe9bce70a614","job":"21425e0a4440403eaff07cd76771e9ea"}'}
+{'id': 240, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"21425e0a4440403eaff07cd76771e9ea","worker":"fixture-staged-after"}'}
+
+STUDY {'id': 'beaa73e1c20e4e0a90c40771f6bdf013', 'name': 'Screening study 7128', 'kind': 'screening', 'created': '2026-10-18T20:49:34.562702+00:00'}
+datasets
+{'id': 'e5b21b9228a2402da37d0ae1bacedd66', 'revision': 1, 'sha': '4a6693ae6bc37b2d6fae18af140ce60ca22a79784e981673384de6bb150e35c8'}
+ingest_sessions
+jobs
+events
+{'id': 450, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 451, 'action': 'imported', 'payload': '{"dataset":"e5b21b9228a2402da37d0ae1bacedd66","revision":1,"sha256":"4a6693ae6bc37b2d6fae18af140ce60ca22a79784e981673384de6bb150e35c8"}'}
+{'id': 452, 'action': 'analysis_started', 'payload': '{"dataset":"e5b21b9228a2402da37d0ae1bacedd66","run":"5b4310efb3294f34b501a699838e0357"}'}
+{'id': 453, 'action': 'analysis_completed', 'payload': '{"result_sha256":"f81a9c4840e54d1d80d7f40036df6072b834fac81e58b6eccab9483500721c65","run":"5b4310efb3294f34b501a699838e0357"}'}
+{'id': 454, 'action': 'reviewed', 'payload': '{"action":"accept","decision":29,"run":"5b4310efb3294f34b501a699838e0357"}'}
+
+STUDY {'id': 'c332a63b5ecf4a64a60413f565064522', 'name': 'Screening study 7126', 'kind': 'screening', 'created': '2026-10-18T20:49:34.526255+00:00'}
+datasets
+{'id': '486f9e18d18f49d3859733bca0d0b9e7', 'revision': 1, 'sha': 'f9ca05ff4dfcc30bdec971c0316498f8f7cb8f562a685e56e0433aefd5e2acbd'}
+{'id': '6839292fba91429ba510bb16551f0b9c', 'revision': 2, 'sha': 'a8444669674ecb0e2cdbb3efbc4c820df5b0c471a63972eebdff6454a596e7a8'}
+ingest_sessions
+{'id': '3c4e5eb6edb942e8823255753aa7dbe5', 'delivery_key': 'delivery-0', 'published_dataset': '486f9e18d18f49d3859733bca0d0b9e7'}
+{'id': '7da37c5b42a847598b17462b3da828ed', 'delivery_key': 'delivery-1', 'published_dataset': '486f9e18d18f49d3859733bca0d0b9e7'}
+jobs
+{'id': 'dd6dabc1cc654c23a2544d23ebe667ce', 'dataset': '486f9e18d18f49d3859733bca0d0b9e7', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '985d61762e2845f885d9b5338d585ec6', 'dataset': '486f9e18d18f49d3859733bca0d0b9e7', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'e30433262334480c95c35075486498c1', 'dataset': '486f9e18d18f49d3859733bca0d0b9e7', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '4302d38fbf7e49f2b0e8c8b5fff755a6', 'dataset': '486f9e18d18f49d3859733bca0d0b9e7', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'bafd65c523214bba8e6769f731bf1666', 'dataset': '486f9e18d18f49d3859733bca0d0b9e7', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 414, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 415, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"b3a1ca85bc877bd8504d52dcca58017faca8476404ff7051fe48f6a53f9597eb","session":"3c4e5eb6edb942e8823255753aa7dbe5"}'}
+{'id': 416, 'action': 'imported', 'payload': '{"dataset":"486f9e18d18f49d3859733bca0d0b9e7","revision":1,"sha256":"f9ca05ff4dfcc30bdec971c0316498f8f7cb8f562a685e56e0433aefd5e2acbd"}'}
+{'id': 417, 'action': 'ingest_published', 'payload': '{"dataset":"486f9e18d18f49d3859733bca0d0b9e7","session":"3c4e5eb6edb942e8823255753aa7dbe5"}'}
+{'id': 418, 'action': 'job_submitted', 'payload': '{"dataset":"486f9e18d18f49d3859733bca0d0b9e7","job":"dd6dabc1cc654c23a2544d23ebe667ce"}'}
+{'id': 419, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"dd6dabc1cc654c23a2544d23ebe667ce","worker":"fixture-completed"}'}
+{'id': 420, 'action': 'job_published', 'payload': '{"generation":1,"job":"dd6dabc1cc654c23a2544d23ebe667ce","run":"768d62162dd5428cafc12f370b7e7a88"}'}
+{'id': 421, 'action': 'reviewed', 'payload': '{"action":"accept","decision":27,"run":"768d62162dd5428cafc12f370b7e7a88"}'}
+{'id': 422, 'action': 'job_submitted', 'payload': '{"dataset":"486f9e18d18f49d3859733bca0d0b9e7","job":"e30433262334480c95c35075486498c1"}'}
+{'id': 423, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"e30433262334480c95c35075486498c1","worker":"fixture-staged"}'}
+{'id': 424, 'action': 'job_submitted', 'payload': '{"dataset":"486f9e18d18f49d3859733bca0d0b9e7","job":"985d61762e2845f885d9b5338d585ec6"}'}
+{'id': 425, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"123c3d11271bda2af32f1aef6015f151ae3735f8cfeede9dd20d8d22527d73a3","session":"7da37c5b42a847598b17462b3da828ed"}'}
+{'id': 426, 'action': 'ingest_published', 'payload': '{"dataset":"486f9e18d18f49d3859733bca0d0b9e7","session":"7da37c5b42a847598b17462b3da828ed"}'}
+{'id': 427, 'action': 'job_submitted', 'payload': '{"dataset":"486f9e18d18f49d3859733bca0d0b9e7","job":"bafd65c523214bba8e6769f731bf1666"}'}
+{'id': 428, 'action': 'job_submitted', 'payload': '{"dataset":"486f9e18d18f49d3859733bca0d0b9e7","job":"4302d38fbf7e49f2b0e8c8b5fff755a6"}'}
+{'id': 429, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"4302d38fbf7e49f2b0e8c8b5fff755a6","worker":"fixture-staged-after"}'}
+{'id': 430, 'action': 'imported', 'payload': '{"dataset":"6839292fba91429ba510bb16551f0b9c","revision":2,"sha256":"a8444669674ecb0e2cdbb3efbc4c820df5b0c471a63972eebdff6454a596e7a8"}'}
+
+STUDY {'id': 'd29ef575e8ee4e67abbb49ea1848f963', 'name': 'Screening study 7136', 'kind': 'screening', 'created': '2026-10-18T20:49:34.669879+00:00'}
+datasets
+{'id': 'dd343ba2dc59435ea30a93769020f630', 'revision': 1, 'sha': 'c590ec73b4abf0c06c40127f4e877ec8f2b590762957c3df9cd39a87b26bea1f'}
+ingest_sessions
+{'id': 'b4c248c189c348bb964fbbaa57b2c359', 'delivery_key': 'delivery-0', 'published_dataset': 'dd343ba2dc59435ea30a93769020f630'}
+{'id': '098693176ac94168bda2bea63d5d39eb', 'delivery_key': 'delivery-1', 'published_dataset': 'dd343ba2dc59435ea30a93769020f630'}
+jobs
+{'id': '56764816f7294a9d8b02812e61598b6e', 'dataset': 'dd343ba2dc59435ea30a93769020f630', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': 'fe924f85687e4c308b70433752ed2844', 'dataset': 'dd343ba2dc59435ea30a93769020f630', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'c67e3130b7c240c2a455a28e4ad2af95', 'dataset': 'dd343ba2dc59435ea30a93769020f630', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '3346a1fd6c1046fdb2f87bc43e4d156e', 'dataset': 'dd343ba2dc59435ea30a93769020f630', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 553, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 554, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"7c9c27431fe9c343400e359070984198bd1accadc3df47bc930279d62912403f","session":"b4c248c189c348bb964fbbaa57b2c359"}'}
+{'id': 555, 'action': 'imported', 'payload': '{"dataset":"dd343ba2dc59435ea30a93769020f630","revision":1,"sha256":"c590ec73b4abf0c06c40127f4e877ec8f2b590762957c3df9cd39a87b26bea1f"}'}
+{'id': 556, 'action': 'ingest_published', 'payload': '{"dataset":"dd343ba2dc59435ea30a93769020f630","session":"b4c248c189c348bb964fbbaa57b2c359"}'}
+{'id': 557, 'action': 'job_submitted', 'payload': '{"dataset":"dd343ba2dc59435ea30a93769020f630","job":"56764816f7294a9d8b02812e61598b6e"}'}
+{'id': 558, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"56764816f7294a9d8b02812e61598b6e","worker":"fixture"}'}
+{'id': 559, 'action': 'job_published', 'payload': '{"generation":1,"job":"56764816f7294a9d8b02812e61598b6e","run":"18150191a8a34286ba679c5f434fcdd9"}'}
+{'id': 560, 'action': 'reviewed', 'payload': '{"action":"accept","decision":37,"run":"18150191a8a34286ba679c5f434fcdd9"}'}
+{'id': 561, 'action': 'job_submitted', 'payload': '{"dataset":"dd343ba2dc59435ea30a93769020f630","job":"fe924f85687e4c308b70433752ed2844"}'}
+{'id': 562, 'action': 'job_submitted', 'payload': '{"dataset":"dd343ba2dc59435ea30a93769020f630","job":"c67e3130b7c240c2a455a28e4ad2af95"}'}
+{'id': 563, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"c67e3130b7c240c2a455a28e4ad2af95","worker":"fixture"}'}
+{'id': 564, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"c2372168de35ec0543223a7f0607611a30e9d95c4eded32410a7be8bd361adb6","session":"098693176ac94168bda2bea63d5d39eb"}'}
+{'id': 565, 'action': 'ingest_published', 'payload': '{"dataset":"dd343ba2dc59435ea30a93769020f630","session":"098693176ac94168bda2bea63d5d39eb"}'}
+{'id': 566, 'action': 'job_submitted', 'payload': '{"dataset":"dd343ba2dc59435ea30a93769020f630","job":"3346a1fd6c1046fdb2f87bc43e4d156e"}'}
+
+STUDY {'id': 'e3b6e9f24fc44de3891d9626beddaf5e', 'name': 'Screening study 7125', 'kind': 'screening', 'created': '2026-10-18T20:49:34.505630+00:00'}
+datasets
+{'id': '8057992b94794b28a1180e198a9aa7a6', 'revision': 1, 'sha': '4255e230323fcf9b52317215ce751e6fc006fd53a7a65ff633c6eed91722ac79'}
+ingest_sessions
+{'id': '73184d09c62742bc84d9ca2647e9af28', 'delivery_key': 'delivery-0', 'published_dataset': '8057992b94794b28a1180e198a9aa7a6'}
+{'id': 'c7a96f93823a41ac9f7baa0c6c1129dc', 'delivery_key': 'delivery-1', 'published_dataset': '8057992b94794b28a1180e198a9aa7a6'}
+{'id': '392c7e4b85374d55a81a4978add37913', 'delivery_key': 'delivery-2', 'published_dataset': '8057992b94794b28a1180e198a9aa7a6'}
+jobs
+{'id': 'c1e6a9f53e8048f6909ba1e4df34ef35', 'dataset': '8057992b94794b28a1180e198a9aa7a6', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '699d7edb9e0742fab9d8e2433428312e', 'dataset': '8057992b94794b28a1180e198a9aa7a6', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '409404a6152342cf9e3d388f9d14f773', 'dataset': '8057992b94794b28a1180e198a9aa7a6', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '90e96bbe67d94ddf9af82a11d8a01219', 'dataset': '8057992b94794b28a1180e198a9aa7a6', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'fcb7eb90caec4da4a0cec01358456cbc', 'dataset': '8057992b94794b28a1180e198a9aa7a6', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '086bfaca016843d9b3652d7935c9e2a6', 'dataset': '8057992b94794b28a1180e198a9aa7a6', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 395, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 396, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"3a24f4fce6fc41ab9b91520e36134a2df0ea792cd002b5f2e058c13cd9b80b13","session":"73184d09c62742bc84d9ca2647e9af28"}'}
+{'id': 397, 'action': 'imported', 'payload': '{"dataset":"8057992b94794b28a1180e198a9aa7a6","revision":1,"sha256":"4255e230323fcf9b52317215ce751e6fc006fd53a7a65ff633c6eed91722ac79"}'}
+{'id': 398, 'action': 'ingest_published', 'payload': '{"dataset":"8057992b94794b28a1180e198a9aa7a6","session":"73184d09c62742bc84d9ca2647e9af28"}'}
+{'id': 399, 'action': 'job_submitted', 'payload': '{"dataset":"8057992b94794b28a1180e198a9aa7a6","job":"c1e6a9f53e8048f6909ba1e4df34ef35"}'}
+{'id': 400, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"c1e6a9f53e8048f6909ba1e4df34ef35","worker":"fixture-completed"}'}
+{'id': 401, 'action': 'job_published', 'payload': '{"generation":1,"job":"c1e6a9f53e8048f6909ba1e4df34ef35","run":"a3bcb45dfb0545949ead935055bbab62"}'}
+{'id': 402, 'action': 'reviewed', 'payload': '{"action":"accept","decision":26,"run":"a3bcb45dfb0545949ead935055bbab62"}'}
+{'id': 403, 'action': 'job_submitted', 'payload': '{"dataset":"8057992b94794b28a1180e198a9aa7a6","job":"90e96bbe67d94ddf9af82a11d8a01219"}'}
+{'id': 404, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"90e96bbe67d94ddf9af82a11d8a01219","worker":"fixture-staged"}'}
+{'id': 405, 'action': 'job_submitted', 'payload': '{"dataset":"8057992b94794b28a1180e198a9aa7a6","job":"409404a6152342cf9e3d388f9d14f773"}'}
+{'id': 406, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"f91ca9c42b70adb47ede57b66a1b28eed02253f64ecf801064dce58762236a03","session":"c7a96f93823a41ac9f7baa0c6c1129dc"}'}
+{'id': 407, 'action': 'ingest_published', 'payload': '{"dataset":"8057992b94794b28a1180e198a9aa7a6","session":"c7a96f93823a41ac9f7baa0c6c1129dc"}'}
+{'id': 408, 'action': 'job_submitted', 'payload': '{"dataset":"8057992b94794b28a1180e198a9aa7a6","job":"086bfaca016843d9b3652d7935c9e2a6"}'}
+{'id': 409, 'action': 'job_submitted', 'payload': '{"dataset":"8057992b94794b28a1180e198a9aa7a6","job":"fcb7eb90caec4da4a0cec01358456cbc"}'}
+{'id': 410, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"fcb7eb90caec4da4a0cec01358456cbc","worker":"fixture-staged-after"}'}
+{'id': 411, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"4f6b0272dc793c1631c1457d9e2bd2aedee80104431a9d0fa59d155197b5e880","session":"392c7e4b85374d55a81a4978add37913"}'}
+{'id': 412, 'action': 'ingest_published', 'payload': '{"dataset":"8057992b94794b28a1180e198a9aa7a6","session":"392c7e4b85374d55a81a4978add37913"}'}
+{'id': 413, 'action': 'job_submitted', 'payload': '{"dataset":"8057992b94794b28a1180e198a9aa7a6","job":"699d7edb9e0742fab9d8e2433428312e"}'}
+
+STUDY {'id': 'e3f589589e8d4a53af162c3b8d5409b0', 'name': 'Screening study 7135', 'kind': 'screening', 'created': '2026-10-18T20:49:34.656450+00:00'}
+datasets
+{'id': 'e31a0dc1f9a549399fd73e2a37b71be2', 'revision': 1, 'sha': '1ba4783d229fa1837438cbf6d9c89be26e198c8581aca7cb413ff61e130831dc'}
+ingest_sessions
+{'id': '0da9e7202bf34116b53cbc764df0cffb', 'delivery_key': 'delivery-0', 'published_dataset': 'e31a0dc1f9a549399fd73e2a37b71be2'}
+{'id': 'ef19f45191fb492e8a4bde5b5557f138', 'delivery_key': 'delivery-1', 'published_dataset': 'e31a0dc1f9a549399fd73e2a37b71be2'}
+jobs
+{'id': '019b5892671e43f682bb94b1df14d347', 'dataset': 'e31a0dc1f9a549399fd73e2a37b71be2', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': 'adee638503da4db69a807e17d83ad666', 'dataset': 'e31a0dc1f9a549399fd73e2a37b71be2', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '283959c5a5604d2482829eac02711f03', 'dataset': 'e31a0dc1f9a549399fd73e2a37b71be2', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'dc0b8d15da554447a899923518d18f4f', 'dataset': 'e31a0dc1f9a549399fd73e2a37b71be2', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 539, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 540, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"0a306f855ec7c54fc0a65bc0162369b2e7953376d60e4f8be3c36c56c8d077c8","session":"0da9e7202bf34116b53cbc764df0cffb"}'}
+{'id': 541, 'action': 'imported', 'payload': '{"dataset":"e31a0dc1f9a549399fd73e2a37b71be2","revision":1,"sha256":"1ba4783d229fa1837438cbf6d9c89be26e198c8581aca7cb413ff61e130831dc"}'}
+{'id': 542, 'action': 'ingest_published', 'payload': '{"dataset":"e31a0dc1f9a549399fd73e2a37b71be2","session":"0da9e7202bf34116b53cbc764df0cffb"}'}
+{'id': 543, 'action': 'job_submitted', 'payload': '{"dataset":"e31a0dc1f9a549399fd73e2a37b71be2","job":"019b5892671e43f682bb94b1df14d347"}'}
+{'id': 544, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"019b5892671e43f682bb94b1df14d347","worker":"fixture"}'}
+{'id': 545, 'action': 'job_published', 'payload': '{"generation":1,"job":"019b5892671e43f682bb94b1df14d347","run":"7b26e709631044d49e23d782a7cfb44c"}'}
+{'id': 546, 'action': 'reviewed', 'payload': '{"action":"accept","decision":36,"run":"7b26e709631044d49e23d782a7cfb44c"}'}
+{'id': 547, 'action': 'job_submitted', 'payload': '{"dataset":"e31a0dc1f9a549399fd73e2a37b71be2","job":"adee638503da4db69a807e17d83ad666"}'}
+{'id': 548, 'action': 'job_submitted', 'payload': '{"dataset":"e31a0dc1f9a549399fd73e2a37b71be2","job":"283959c5a5604d2482829eac02711f03"}'}
+{'id': 549, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"283959c5a5604d2482829eac02711f03","worker":"fixture"}'}
+{'id': 550, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"25358565286f7f56edbc67a6b434606af600a78e90b7aaf4f2dfb57a7d9e22c4","session":"ef19f45191fb492e8a4bde5b5557f138"}'}
+{'id': 551, 'action': 'ingest_published', 'payload': '{"dataset":"e31a0dc1f9a549399fd73e2a37b71be2","session":"ef19f45191fb492e8a4bde5b5557f138"}'}
+{'id': 552, 'action': 'job_submitted', 'payload': '{"dataset":"e31a0dc1f9a549399fd73e2a37b71be2","job":"dc0b8d15da554447a899923518d18f4f"}'}
+
+STUDY {'id': 'eb03974e42154e12a901dc8fbfaca3d3', 'name': 'Screening study 7120', 'kind': 'screening', 'created': '2026-10-18T20:49:34.434866+00:00'}
+datasets
+{'id': 'ac8677cfd3c347a69477cf95b3ecb34e', 'revision': 1, 'sha': 'a27e078d0e306983c7d330a3f85e7dbeb110e070aef5c1f322803d9cbf066e68'}
+{'id': 'a759a637aa0540d9b11cfe57db01a980', 'revision': 2, 'sha': '4c4d7dd5ffab847a977839541e8f32e0b823892b5c0e988675f364fa586c1cea'}
+ingest_sessions
+{'id': 'f563c46d402d484ba48f88e11bd90596', 'delivery_key': 'delivery-0', 'published_dataset': 'ac8677cfd3c347a69477cf95b3ecb34e'}
+{'id': '63dd29f69ced41f9aca19753a8117f8b', 'delivery_key': 'delivery-1', 'published_dataset': 'a759a637aa0540d9b11cfe57db01a980'}
+jobs
+{'id': 'eea248baacff4d77a51c7e4a09c78c2d', 'dataset': 'a759a637aa0540d9b11cfe57db01a980', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'f989a50f45f544c8a9f77a6dbcb4f895', 'dataset': 'a759a637aa0540d9b11cfe57db01a980', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': 'fc04b820b1314a05b9bc7dd64a5508ca', 'dataset': 'ac8677cfd3c347a69477cf95b3ecb34e', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '6d7ecf5e5585467b8f2db3fd4590f69d', 'dataset': 'ac8677cfd3c347a69477cf95b3ecb34e', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '385c726fe1484fbf9bf034dc6f3ea76c', 'dataset': 'ac8677cfd3c347a69477cf95b3ecb34e', 'state': 'running', 'generation': 1, 'staged': 1}
+events
+{'id': 324, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 325, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"1651d398056337d42d63f570485bd244f7e385ad5e3e67e8874f43d4a268717f","session":"f563c46d402d484ba48f88e11bd90596"}'}
+{'id': 326, 'action': 'imported', 'payload': '{"dataset":"ac8677cfd3c347a69477cf95b3ecb34e","revision":1,"sha256":"a27e078d0e306983c7d330a3f85e7dbeb110e070aef5c1f322803d9cbf066e68"}'}
+{'id': 327, 'action': 'ingest_published', 'payload': '{"dataset":"ac8677cfd3c347a69477cf95b3ecb34e","session":"f563c46d402d484ba48f88e11bd90596"}'}
+{'id': 328, 'action': 'job_submitted', 'payload': '{"dataset":"ac8677cfd3c347a69477cf95b3ecb34e","job":"fc04b820b1314a05b9bc7dd64a5508ca"}'}
+{'id': 329, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"fc04b820b1314a05b9bc7dd64a5508ca","worker":"fixture-completed"}'}
+{'id': 330, 'action': 'job_published', 'payload': '{"generation":1,"job":"fc04b820b1314a05b9bc7dd64a5508ca","run":"0292f32100054c60a4adfcc0680b0b1e"}'}
+{'id': 331, 'action': 'reviewed', 'payload': '{"action":"accept","decision":21,"run":"0292f32100054c60a4adfcc0680b0b1e"}'}
+{'id': 332, 'action': 'job_submitted', 'payload': '{"dataset":"ac8677cfd3c347a69477cf95b3ecb34e","job":"385c726fe1484fbf9bf034dc6f3ea76c"}'}
+{'id': 333, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"385c726fe1484fbf9bf034dc6f3ea76c","worker":"fixture-staged"}'}
+{'id': 334, 'action': 'job_submitted', 'payload': '{"dataset":"ac8677cfd3c347a69477cf95b3ecb34e","job":"6d7ecf5e5585467b8f2db3fd4590f69d"}'}
+{'id': 335, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"ee8601092e2d4e0361640220ee11cd800b61505aacf6ba399dd32f1f7ba0d88d","session":"63dd29f69ced41f9aca19753a8117f8b"}'}
+{'id': 336, 'action': 'imported', 'payload': '{"dataset":"a759a637aa0540d9b11cfe57db01a980","revision":2,"sha256":"4c4d7dd5ffab847a977839541e8f32e0b823892b5c0e988675f364fa586c1cea"}'}
+{'id': 337, 'action': 'ingest_published', 'payload': '{"dataset":"a759a637aa0540d9b11cfe57db01a980","session":"63dd29f69ced41f9aca19753a8117f8b"}'}
+{'id': 338, 'action': 'job_submitted', 'payload': '{"dataset":"a759a637aa0540d9b11cfe57db01a980","job":"f989a50f45f544c8a9f77a6dbcb4f895"}'}
+{'id': 339, 'action': 'job_submitted', 'payload': '{"dataset":"a759a637aa0540d9b11cfe57db01a980","job":"eea248baacff4d77a51c7e4a09c78c2d"}'}
+{'id': 340, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"eea248baacff4d77a51c7e4a09c78c2d","worker":"fixture-staged-after"}'}
+
+STUDY {'id': 'edde232daf3847a59a7f6a2bcc303f1d', 'name': 'Screening study 7119', 'kind': 'screening', 'created': '2026-10-18T20:49:34.419783+00:00'}
+datasets
+{'id': '76a5da9143034514ba3ba1746803309f', 'revision': 1, 'sha': '9110e0b01b38abc7563eb33fded974ec93df0b4b8fb7fd53a9b01f74328c7f3a'}
+ingest_sessions
+{'id': '78bec238473f480ea6a69083c118af1a', 'delivery_key': 'delivery-0', 'published_dataset': '76a5da9143034514ba3ba1746803309f'}
+{'id': 'a4545442301645698d4aaaba34433e60', 'delivery_key': 'delivery-1', 'published_dataset': '76a5da9143034514ba3ba1746803309f'}
+jobs
+{'id': 'f63f55a71adb4400bd5a573633654486', 'dataset': '76a5da9143034514ba3ba1746803309f', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': 'ba2acf8c199f487c83a1f037e1f92079', 'dataset': '76a5da9143034514ba3ba1746803309f', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '4e2f3a1ce9d345079d41455297bc0ec5', 'dataset': '76a5da9143034514ba3ba1746803309f', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': 'd823482e3afb46aa9ea8151140e4685c', 'dataset': '76a5da9143034514ba3ba1746803309f', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '2d90f4d55e3b4628894569d5ea186974', 'dataset': '76a5da9143034514ba3ba1746803309f', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 308, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 309, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"fb51f1b6cb0ec2c85148bf1d782a43a3c960c058e0e935f20c3cc59a5ea00f62","session":"78bec238473f480ea6a69083c118af1a"}'}
+{'id': 310, 'action': 'imported', 'payload': '{"dataset":"76a5da9143034514ba3ba1746803309f","revision":1,"sha256":"9110e0b01b38abc7563eb33fded974ec93df0b4b8fb7fd53a9b01f74328c7f3a"}'}
+{'id': 311, 'action': 'ingest_published', 'payload': '{"dataset":"76a5da9143034514ba3ba1746803309f","session":"78bec238473f480ea6a69083c118af1a"}'}
+{'id': 312, 'action': 'job_submitted', 'payload': '{"dataset":"76a5da9143034514ba3ba1746803309f","job":"f63f55a71adb4400bd5a573633654486"}'}
+{'id': 313, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"f63f55a71adb4400bd5a573633654486","worker":"fixture-completed"}'}
+{'id': 314, 'action': 'job_published', 'payload': '{"generation":1,"job":"f63f55a71adb4400bd5a573633654486","run":"81c826eb233a46dea3b73169d112f4f7"}'}
+{'id': 315, 'action': 'reviewed', 'payload': '{"action":"accept","decision":20,"run":"81c826eb233a46dea3b73169d112f4f7"}'}
+{'id': 316, 'action': 'job_submitted', 'payload': '{"dataset":"76a5da9143034514ba3ba1746803309f","job":"4e2f3a1ce9d345079d41455297bc0ec5"}'}
+{'id': 317, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"4e2f3a1ce9d345079d41455297bc0ec5","worker":"fixture-staged"}'}
+{'id': 318, 'action': 'job_submitted', 'payload': '{"dataset":"76a5da9143034514ba3ba1746803309f","job":"ba2acf8c199f487c83a1f037e1f92079"}'}
+{'id': 319, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"13c5f297ecfce600e405ed173cb2ba8403a0917536afd14bea59686b4c99f9e1","session":"a4545442301645698d4aaaba34433e60"}'}
+{'id': 320, 'action': 'ingest_published', 'payload': '{"dataset":"76a5da9143034514ba3ba1746803309f","session":"a4545442301645698d4aaaba34433e60"}'}
+{'id': 321, 'action': 'job_submitted', 'payload': '{"dataset":"76a5da9143034514ba3ba1746803309f","job":"2d90f4d55e3b4628894569d5ea186974"}'}
+{'id': 322, 'action': 'job_submitted', 'payload': '{"dataset":"76a5da9143034514ba3ba1746803309f","job":"d823482e3afb46aa9ea8151140e4685c"}'}
+{'id': 323, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"d823482e3afb46aa9ea8151140e4685c","worker":"fixture-staged-after"}'}
+
+STUDY {'id': 'f082fa4fc4844a3ebff5d737204dbfc1', 'name': 'Screening study 7108', 'kind': 'screening', 'created': '2026-10-18T20:49:34.248932+00:00'}
+datasets
+{'id': 'bb37d0ca7f8f4dd3953a902b846b74ec', 'revision': 1, 'sha': 'fb293262e3a7ea72347aa3a5eb97750e67a25f6bc367d36fafb4ff158e599c42'}
+ingest_sessions
+{'id': '1aa264724899430da87e57b3bf3df86b', 'delivery_key': 'delivery-0', 'published_dataset': 'bb37d0ca7f8f4dd3953a902b846b74ec'}
+{'id': 'f17e9cbb1f43475ca6c706a9231fc4c7', 'delivery_key': 'delivery-1', 'published_dataset': 'bb37d0ca7f8f4dd3953a902b846b74ec'}
+jobs
+{'id': '705b59cd21b44c8aa81e4a9aa190d593', 'dataset': 'bb37d0ca7f8f4dd3953a902b846b74ec', 'state': 'complete', 'generation': 1, 'staged': 0}
+{'id': '14e0c02b3f834261a9008c5765e6a991', 'dataset': 'bb37d0ca7f8f4dd3953a902b846b74ec', 'state': 'queued', 'generation': 0, 'staged': 0}
+{'id': '27c6da59d57e47528e8a31c0548dc4e1', 'dataset': 'bb37d0ca7f8f4dd3953a902b846b74ec', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '45767d7ffb974c3ab3dc03bdc58f90eb', 'dataset': 'bb37d0ca7f8f4dd3953a902b846b74ec', 'state': 'running', 'generation': 1, 'staged': 1}
+{'id': '3c5336b236264c3a93e44b929f5ca658', 'dataset': 'bb37d0ca7f8f4dd3953a902b846b74ec', 'state': 'queued', 'generation': 0, 'staged': 0}
+events
+{'id': 123, 'action': 'created', 'payload': '{"kind":"screening"}'}
+{'id': 124, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"bc441e91fc0645ca441fd7159813249f590e45cbf1fa25dc69955ada7b4215c8","session":"1aa264724899430da87e57b3bf3df86b"}'}
+{'id': 125, 'action': 'imported', 'payload': '{"dataset":"bb37d0ca7f8f4dd3953a902b846b74ec","revision":1,"sha256":"fb293262e3a7ea72347aa3a5eb97750e67a25f6bc367d36fafb4ff158e599c42"}'}
+{'id': 126, 'action': 'ingest_published', 'payload': '{"dataset":"bb37d0ca7f8f4dd3953a902b846b74ec","session":"1aa264724899430da87e57b3bf3df86b"}'}
+{'id': 127, 'action': 'job_submitted', 'payload': '{"dataset":"bb37d0ca7f8f4dd3953a902b846b74ec","job":"705b59cd21b44c8aa81e4a9aa190d593"}'}
+{'id': 128, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"705b59cd21b44c8aa81e4a9aa190d593","worker":"fixture-completed"}'}
+{'id': 129, 'action': 'job_published', 'payload': '{"generation":1,"job":"705b59cd21b44c8aa81e4a9aa190d593","run":"65265f159bbb4f4c89a7c6fe8995f9f8"}'}
+{'id': 130, 'action': 'reviewed', 'payload': '{"action":"accept","decision":9,"run":"65265f159bbb4f4c89a7c6fe8995f9f8"}'}
+{'id': 131, 'action': 'job_submitted', 'payload': '{"dataset":"bb37d0ca7f8f4dd3953a902b846b74ec","job":"27c6da59d57e47528e8a31c0548dc4e1"}'}
+{'id': 132, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"27c6da59d57e47528e8a31c0548dc4e1","worker":"fixture-staged"}'}
+{'id': 133, 'action': 'job_submitted', 'payload': '{"dataset":"bb37d0ca7f8f4dd3953a902b846b74ec","job":"14e0c02b3f834261a9008c5765e6a991"}'}
+{'id': 134, 'action': 'ingest_opened', 'payload': '{"manifest_sha256":"c312f608867e4dd0d3b45c8e84d21a521d7ea7d428b11991bacf607f0cf8d521","session":"f17e9cbb1f43475ca6c706a9231fc4c7"}'}
+{'id': 135, 'action': 'ingest_published', 'payload': '{"dataset":"bb37d0ca7f8f4dd3953a902b846b74ec","session":"f17e9cbb1f43475ca6c706a9231fc4c7"}'}
+{'id': 137, 'action': 'job_submitted', 'payload': '{"dataset":"bb37d0ca7f8f4dd3953a902b846b74ec","job":"45767d7ffb974c3ab3dc03bdc58f90eb"}'}
+{'id': 138, 'action': 'job_claimed', 'payload': '{"generation":1,"job":"45767d7ffb974c3ab3dc03bdc58f90eb","worker":"fixture-staged-after"}'}

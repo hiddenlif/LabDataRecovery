@@ -1,0 +1,8 @@
+{
+  "original": "corrected-verifier:0.7.2",
+  "corrected": "validated-verifier:0.7.3",
+  "public_task_unchanged": true,
+  "reason": "The isolated scheduler test inserted a dataset without its durable import/publication event. Genuine import now establishes a valid current input before submission.",
+  "classification": "Original failure is a verifier fixture artifact, not a scheduler decision miss.",
+  "review": "Independent read-only contract audit agrees; reviewer did not inspect solver traces."
+}

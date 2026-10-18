@@ -1,0 +1,222 @@
+"""Documented interchange CSV adapters, retaining row diagnostics and physical identity."""
+import csv
+import io
+from decimal import Decimal, InvalidOperation
+from .codec import integer, number, text
+from .schema import validate
+from .units import convert
+from .errors import WorkbenchError
+
+HEADERS = {
+    'readings': ['id','plate','well','revision','assay','role','signal','compound','dose','dose_unit'],
+    'telemetry': ['plate','well','revision','status','actual_dose','dose_unit'],
+}
+
+
+def numeric(value, label, integral=False):
+    if integral:
+        try:
+            exact = Decimal(value)
+        except (InvalidOperation, ValueError) as exc:
+            raise WorkbenchError(f'{label} must be an integer') from exc
+        if not exact.is_finite() or exact != exact.to_integral_value() or not 1 <= exact <= 9223372036854775807:
+            raise WorkbenchError(f'{label} must be an integer from 1 to 9223372036854775807')
+        return int(exact)
+    try:
+        result = float(value)
+    except (ValueError, TypeError) as exc:
+        raise WorkbenchError(f'{label} must be numeric') from exc
+    return number(result, label)
+
+
+def parse(raw, kind, codec=None):
+    """Return a complete parsed source or row diagnostics; never partial accepted data."""
+    if kind == 'transfer_history':
+        from .codec import loads
+        from copy import deepcopy
+        from .transfer_history import replay
+        try:
+            model = loads(raw.decode('utf-8-sig'))
+            if codec not in (None, 'transfer-history/2', 'transfer-history/1'):
+                raise WorkbenchError('Unsupported transfer codec: ' + str(codec))
+            if codec == 'transfer-history/1':
+                model = deepcopy(model)
+                for binding in model['bindings']:
+                    binding['sequence'] -= 1
+            replay(model)
+            return [{'line':0, 'record':model}], []
+        except (WorkbenchError, ValueError, UnicodeError, OverflowError) as exc:
+            return [], [{'line':0, 'error':str(exc)}]
+    if kind not in HEADERS:
+        raise WorkbenchError('Source kind must be readings or telemetry')
+    try:
+        content = raw.decode('utf-8-sig')
+    except UnicodeError:
+        return [], [{'line': 0, 'error': 'Source is not UTF-8'}]
+    reader = csv.DictReader(io.StringIO(content, newline=''), strict=True)
+    rows, errors = [], []
+    try:
+        fields = reader.fieldnames
+        if fields is None or len(fields) != len(set(fields)) or set(fields) != set(HEADERS[kind]):
+            return [], [{'line': 1, 'error': f'Expected columns: {",".join(HEADERS[kind])}'}]
+        for values in reader:
+            line = reader.line_num
+            try:
+                if None in values or any(v is None for v in values.values()):
+                    raise WorkbenchError('CSV row has the wrong field count')
+                row = {key: value.strip() for key, value in values.items()}
+                for key in ['plate','well']:
+                    row[key] = text(row[key], key)
+                row['revision'] = numeric(row['revision'], 'revision', True)
+                if kind == 'readings':
+                    row['signal'] = numeric(row['signal'], 'signal')
+                    if row['role'] == 'sample':
+                        row['dose'] = numeric(row['dose'], 'dose')
+                        convert(row['dose'], row['dose_unit'], 'concentration')
+                    else:
+                        if any(row[k] for k in ['compound','dose','dose_unit']):
+                            raise WorkbenchError('Control compound/dose/unit fields must be empty')
+                        for key in ['compound','dose','dose_unit']:
+                            row.pop(key)
+                    validate({'kind':'screening', 'records':[row]})
+                else:
+                    if row['status'] not in {'ok','failed','cancelled'}:
+                        raise WorkbenchError('Unknown transfer status')
+                    if row['status'] == 'ok':
+                        row['actual_dose'] = numeric(row['actual_dose'], 'actual_dose')
+                        convert(row['actual_dose'], row['dose_unit'], 'concentration')
+                    else:
+                        if row['actual_dose'] or row['dose_unit']:
+                            raise WorkbenchError('Unsuccessful transfer dose/unit fields must be empty')
+                        row.pop('actual_dose'); row.pop('dose_unit')
+                rows.append({'line':line, 'record':row})
+            except (WorkbenchError, ValueError, OverflowError) as exc:
+                errors.append({'line':line, 'error':str(exc)})
+    except csv.Error as exc:
+        errors.append({'line':reader.line_num, 'error':f'Invalid CSV: {exc}'})
+    if not rows and not errors:
+        errors.append({'line':1, 'error':'Source contains no data rows'})
+    return ([], errors) if errors else (rows, [])
+"""Dataset validation shared by direct analysis and stored campaigns."""
+from .codec import require, text, number, integer
+from .errors import WorkbenchError
+
+KINDS = {"screening", "bridge", "stability", "rare_events"}
+ASSAYS = {"primary", "counter", "viability", "orthogonal"}
+
+
+def validate(data):
+    require(data, ["kind", "records"], "dataset")
+    if data["kind"] not in KINDS:
+        raise WorkbenchError("Unknown study kind")
+    rows = data["records"]
+    if not isinstance(rows, list) or not rows or len(rows) > 100000:
+        raise WorkbenchError("records must contain 1 to 100000 rows")
+    seen = set()
+    for i, row in enumerate(rows):
+        require(row, ["id"], f"record {i}")
+        key = text(row["id"], "record id")
+        if key != row["id"]:
+            raise WorkbenchError("Record identifiers cannot contain surrounding whitespace")
+        if key in seen:
+            raise WorkbenchError(f"Duplicate record id: {key}")
+        seen.add(key)
+        kind = data["kind"]
+        if kind == "screening":
+            require(row, ["plate", "well", "assay", "role", "signal"], key)
+            text(row["plate"], "plate"); text(row["well"], "well")
+            if row["assay"] not in ASSAYS or row["role"] not in {"sample", "vehicle", "positive"}:
+                raise WorkbenchError(f"Invalid assay or role: {key}")
+            number(row["signal"], "signal")
+            if row["role"] == "sample":
+                require(row, ["compound", "dose", "dose_unit"], key)
+                text(row["compound"], "compound"); number(row["dose"], "dose", 0)
+        elif kind == "bridge":
+            require(row, ["donor", "sample", "method", "value", "unit"], key)
+            for field in ["donor", "sample", "method", "unit"]:
+                text(row[field], field)
+            number(row["value"], "value", 0)
+        elif kind == "stability":
+            require(row, ["batch", "time", "time_unit", "value", "weight"], key)
+            text(row["batch"], "batch"); number(row["time"], "time", 0)
+            number(row["value"], "value"); number(row["weight"], "weight", 1e-12)
+        else:
+            require(row, ["batch", "level", "events", "total", "expected_fraction"], key)
+            text(row["batch"], "batch"); text(row["level"], "level")
+            events = integer(row["events"], "events")
+            total = integer(row["total"], "total", 1)
+            if events > total:
+                raise WorkbenchError("events cannot exceed total")
+            number(row["expected_fraction"], "expected_fraction", 0, 1)
+    if "transfer_history" in data:
+        from .transfer_history import histories
+        histories(data)
+    if "calibration" in data:
+        from .calibration_graph import resolve_model
+        resolve_model(data)
+    return data
+
+"""Surface an intake discrepancy without modifying the supplied evidence."""
+from pathlib import Path
+import json
+import shutil
+import sqlite3
+import sys
+from truegate.recovery import recover
+HERE=Path(__file__).resolve().parent
+
+def main():
+    out=Path(sys.argv[1]);out.mkdir(parents=True,exist_ok=False)
+    path=out/'study.db';shutil.copyfile(HERE/'study.db',path)
+    cid=json.loads((HERE/'example.json').read_text())['campaign']
+    with sqlite3.connect(path) as db:
+        datasets=db.execute('SELECT COUNT(*) FROM datasets WHERE campaign=?',(cid,)).fetchone()[0]
+        deliveries=db.execute("SELECT COUNT(*) FROM ingest_sessions WHERE campaign=? AND state='published'",(cid,)).fetchone()[0]
+        links=[r[0] for r in db.execute("SELECT published_dataset FROM ingest_sessions WHERE campaign=? AND state='published' ORDER BY id",(cid,))]
+    report=recover(path,dry_run=True)
+    print(json.dumps({'campaign':cid,'published_deliveries':deliveries,'stored_datasets':datasets,
+                      'distinct_linked_datasets':len(set(links)),
+                      'recovery_preview':next(e for e in report['studies'] if e['campaign']==cid)},indent=2))
+
+if __name__=='__main__':main()
+docs/instrument-profiles.json:9:  "selection": "source descriptor codec; preserve original bytes and manifest; normalized histories use inclusive snapshots"
+src/truegate/reporting.py:10:from .codec import dumps, loads
+src/truegate/schema.py:2:from .codec import require, text, number, integer
+docs/ingestion.md:36:Preview and publish require every declared source accepted. Resolve original stored bytes again and check their fingerprints. An altered parsed cache must not change the result. For each readings `(plate,well,revision)`, identical normalized records merge provenance; conflicting content is an error even for a superseded revision. Select the highest readings revision per well, independently of file arrival order. Final IDs must be unique. A plate has one assay. Telemetry revisions use the same exact-duplicate/conflict rule; retain all distinct revisions and let the existing dispensing rules select the latest. Telemetry must reference a sample well in the resolved readings.
+docs/ingestion.md:46:The additive SQLite schema is version 4. Operational tooling inspects `ingest_sessions` (id, campaign, delivery_key, manifest, manifest_sha, expected_revision, state, published_dataset, created), `ingest_sources` (session, source_id, state, raw, sha, parsed, diagnostics), and `ingest_attempts` (sequence, session, source_id, sha, state, diagnostics). `raw` stores original BLOB bytes; manifest, parsed and diagnostics are JSON text. `parsed` is a disposable cache. Source states are pending, accepted or rejected; session states are open, published or cancelled. `(campaign,delivery_key)` and `(session,source_id)` are unique. Attempts append in sequence order; accepted replays add no attempt. Retain foreign-key integrity and the existing datasets, runs, jobs, decisions and events interfaces. Publication adds one `imported` event and one `ingest_published` event. Transition failures must roll back both events and dataset creation. Schema upgrades must preserve existing records.
+src/truegate/calibration.py:3:from .codec import require, integer, number, digest, text
+src/truegate/repository.py:5:from .codec import dumps, loads, digest, text
+src/truegate/repository.py:43:    from .dispensing import measurement_key
+src/truegate/repository.py:44:    if latest and (latest["sha"] == sha or measurement_key(loads(latest["content"])) == measurement_key(data)):
+docs/transfer-history.md:37:Instrument manifests may declare at most one `transfer_history` source in addition to readings and optional legacy telemetry. Its exact UTF-8 JSON bytes, optionally BOM-prefixed, contain the complete history object. Malformed history rejects the whole source with line-zero diagnostics; record bindings and plate conflicts are checked once all sources are assembled. Source staging, fingerprints, retries, cache distrust and atomic publication retain the existing ingestion contract. Corrected histories use a new delivery ID and publish a complete new study revision.
+src/truegate/examples.py:4:from .codec import dumps
+src/truegate/ingest_resolution.py:3:from .codec import digest, loads
+docs/architecture.md:5:* `codec`: strict JSON, canonical serialization and fingerprints.
+src/truegate/cli.py:6:from .codec import load, dumps
+src/truegate/cli.py:34:    a = sub.add_parser("evidence-recover", help="Recover suppressed delivery revisions")
+src/truegate/cli.py:60:    if args.command == "evidence-recover":
+docs/evidence-recovery.md:3:Use copies of supplied evidence. `truegate evidence-recover --db study.db --dry-run` returns a JSON plan without writing to the database or creating a backup. Apply uses `--backup /absolute/new/backup.db`; the destination must not exist or alias the input. Take an independently readable, consistent SQLite backup before mutation. Serialize against writers. An unexpected failure rolls back the whole apply.
+docs/evidence-recovery.md:7:Retained bytes, their integrity records and durable publication history are evidence. Derived caches can be stale. Recovery must neither invent missing provenance nor undo valid progress made by an earlier recovery. Preserve existing dataset content, source bytes, events, attempts, runs and review decisions. Admit a study only if its evidence determines a unique safe result and resulting job keys remain valid; otherwise report it as blocked without partially changing it. Unrelated valid studies can proceed.
+src/truegate/registry.py:3:from .codec import require, text, digest, dumps
+src/truegate/engine.py:4:from .codec import digest
+src/truegate/recovery.py:6:from .codec import loads, dumps, digest
+src/truegate/jobs.py:6:from .codec import loads, dumps, digest, number, text
+src/truegate/transfer_history.py:4:from .codec import require, text, number, digest
+src/truegate/units.py:2:from .codec import number
+src/truegate/dispensing.py:34:def measurement_key(data):
+src/truegate/dispensing.py:36:    from .codec import digest
+src/truegate/calibration_graph.py:4:from .codec import require, text, number
+src/truegate/instrument_files.py:5:from .codec import integer, number, text
+src/truegate/instrument_files.py:32:def parse(raw, kind, codec=None):
+src/truegate/instrument_files.py:35:        from .codec import loads
+src/truegate/instrument_files.py:40:            if codec not in (None, 'transfer-history/2', 'transfer-history/1'):
+src/truegate/instrument_files.py:41:                raise WorkbenchError('Unsupported transfer codec: ' + str(codec))
+src/truegate/instrument_files.py:42:            if codec == 'transfer-history/1':
+src/truegate/ingestion.py:5:from .codec import require, text, integer, dumps, loads, digest
+src/truegate/policy.py:3:from .codec import number, integer, text
+tests/test_core.py:3:from truegate.codec import loads, digest
+tests/test_ingestion.py:53:def test_parsed_cache_is_not_the_evidence_source(tmp_path):
+tests/test_transfer_history.py:69:    from truegate.codec import load
+tests/test_correction_lifecycle.py:12:from truegate.codec import digest, dumps, load, loads
+fatal: not a git repository (or any parent up to mount point /)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).

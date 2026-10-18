@@ -1,0 +1,429 @@
+"""Immutable input revisions, content-bound analyses and append-only review events."""
+from datetime import datetime, timezone
+import uuid
+from .database import initialize, transaction
+from .codec import dumps, loads, digest, text
+from .schema import validate, KINDS
+from .policy import resolve
+from .errors import WorkbenchError, Conflict
+from . import ENGINE_VERSION
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def event(db, campaign, action, payload):
+    db.execute("INSERT INTO events(campaign,action,payload,created) VALUES (?,?,?,?)",
+               (campaign, action, dumps(payload), now()))
+
+
+def get_campaign(db, campaign):
+    row = db.execute("SELECT * FROM campaigns WHERE id=?", (campaign,)).fetchone()
+    if row is None:
+        raise WorkbenchError("Unknown campaign")
+    return row
+
+
+def latest_dataset(db, campaign):
+    row = db.execute("SELECT * FROM datasets WHERE campaign=? ORDER BY revision DESC LIMIT 1", (campaign,)).fetchone()
+    if row is None:
+        raise WorkbenchError("Campaign has no dataset")
+    return row
+
+
+def store_dataset(db, campaign, data):
+    from .registry import normalize_input
+    validate(normalize_input(data))
+    sha = digest(data)
+    study = get_campaign(db, campaign)
+    if study["kind"] != data["kind"]:
+        raise WorkbenchError("Dataset kind differs from campaign")
+    latest = db.execute("SELECT * FROM datasets WHERE campaign=? ORDER BY revision DESC LIMIT 1", (campaign,)).fetchone()
+    from .dispensing import measurement_key
+    if latest and (latest["sha"] == sha or measurement_key(loads(latest["content"])) == measurement_key(data)):
+        return {"dataset": latest["id"], "revision": latest["revision"], "sha256": latest["sha"], "reused": True}
+    revision = latest["revision"] + 1 if latest else 1
+    identifier = uuid.uuid4().hex
+    db.execute("INSERT INTO datasets VALUES (?,?,?,?,?,?)", (identifier, campaign, revision, sha, dumps(data), now()))
+    event(db, campaign, "imported", {"dataset": identifier, "revision": revision, "sha256": sha})
+    return {"dataset": identifier, "revision": revision, "sha256": sha, "reused": False}
+
+
+class Repository:
+    def __init__(self, path):
+        self.path = str(path)
+        initialize(self.path)
+
+    def create(self, name, kind):
+        name = text(name, "campaign name")
+        if kind not in KINDS:
+            raise WorkbenchError("Unknown study kind")
+        campaign = uuid.uuid4().hex
+        with transaction(self.path) as db:
+            db.execute("INSERT INTO campaigns VALUES (?,?,?,?)", (campaign, name, kind, now()))
+            event(db, campaign, "created", {"kind": kind})
+        return {"campaign": campaign, "name": name, "kind": kind}
+
+    def import_data(self, campaign, data):
+        with transaction(self.path) as db:
+            return store_dataset(db, campaign, data)
+
+    def run(self, campaign, policy=None):
+        with transaction(self.path) as db:
+            study = get_campaign(db, campaign)
+            dataset = latest_dataset(db, campaign)
+            settings = resolve(study["kind"], policy)
+            key = digest(settings)
+            old = db.execute("SELECT * FROM runs WHERE campaign=? AND dataset=? AND policy_sha=? AND engine=?",
+                             (campaign, dataset["id"], key, ENGINE_VERSION)).fetchone()
+            if old and old["status"] == "complete":
+                return {"run": old["id"], "reused": True, "analysis": loads(old["result"])}
+            if old and old["status"] == "running":
+                raise Conflict("An identical analysis is already running")
+            identifier = old["id"] if old else uuid.uuid4().hex
+            if old:
+                db.execute("UPDATE runs SET status='running',error=NULL,finished=NULL WHERE id=?", (identifier,))
+            else:
+                db.execute("INSERT INTO runs(id,campaign,dataset,policy_sha,policy,engine,status,created) VALUES (?,?,?,?,?,?,'running',?)",
+                           (identifier, campaign, dataset["id"], key, dumps(settings), ENGINE_VERSION, now()))
+            event(db, campaign, "analysis_started", {"run": identifier, "dataset": dataset["id"]})
+        try:
+            from .engine import analyze
+            result = analyze(loads(dataset["content"]), settings)
+        except Exception as exc:
+            with transaction(self.path) as db:
+                db.execute("UPDATE runs SET status='failed',error=?,finished=? WHERE id=?", (str(exc), now(), identifier))
+                event(db, campaign, "analysis_failed", {"run": identifier, "error": str(exc)})
+            raise
+        with transaction(self.path) as db:
+            db.execute("UPDATE runs SET status='complete',result=?,finished=? WHERE id=?", (dumps(result), now(), identifier))
+            event(db, campaign, "analysis_completed", {"run": identifier, "result_sha256": digest(result)})
+        return {"run": identifier, "reused": False, "analysis": result}
+
+    def review(self, campaign, run, action, reviewer, note, expected_revision):
+        if action not in {"accept", "hold", "reject"}:
+            raise WorkbenchError("Review action must be accept, hold or reject")
+        text(reviewer, "reviewer"); text(note, "review note")
+        with transaction(self.path) as db:
+            get_campaign(db, campaign)
+            latest = latest_dataset(db, campaign)
+            result = db.execute("SELECT * FROM runs WHERE id=? AND campaign=?", (run, campaign)).fetchone()
+            if not result or result["status"] != "complete":
+                raise WorkbenchError("A complete analysis from this campaign is required")
+            if result["dataset"] != latest["id"] or expected_revision != latest["revision"]:
+                raise Conflict("Dataset changed; refresh the campaign and analyze its current revision")
+            cursor = db.execute("INSERT INTO decisions(campaign,run,action,reviewer,note,created) VALUES (?,?,?,?,?,?)",
+                                (campaign, run, action, reviewer, note, now()))
+            event(db, campaign, "reviewed", {"run": run, "decision": cursor.lastrowid, "action": action})
+            return {"decision": cursor.lastrowid, "action": action, "run": run}
+
+    def show(self, campaign):
+        with transaction(self.path) as db:
+            study = dict(get_campaign(db, campaign))
+            datasets = [dict(r) for r in db.execute("SELECT id,revision,sha,created FROM datasets WHERE campaign=? ORDER BY revision", (campaign,))]
+            runs = [dict(r) for r in db.execute("SELECT id,dataset,policy_sha,engine,status,error,created,finished FROM runs WHERE campaign=? ORDER BY created,id", (campaign,))]
+            decisions = [dict(r) for r in db.execute("SELECT * FROM decisions WHERE campaign=? ORDER BY id", (campaign,))]
+            latest_id = datasets[-1]["id"] if datasets else None
+            current_runs = {r["id"] for r in runs if r["dataset"] == latest_id and r["status"] == "complete"}
+            active = [d for d in decisions if d["run"] in current_runs]
+            study.update(datasets=datasets, runs=runs, decisions=decisions,
+                         current_review=active[-1] if active else None,
+                         current_revision=datasets[-1]["revision"] if datasets else None,
+                         events=[dict(r) for r in db.execute("SELECT * FROM events WHERE campaign=? ORDER BY id", (campaign,))])
+            return study
+
+    def snapshot(self, campaign, run):
+        with transaction(self.path) as db:
+            study = dict(get_campaign(db, campaign))
+            result = db.execute("SELECT * FROM runs WHERE id=? AND campaign=?", (run, campaign)).fetchone()
+            if not result or result["status"] != "complete":
+                raise WorkbenchError("A complete analysis from this campaign is required")
+            dataset = db.execute("SELECT * FROM datasets WHERE id=?", (result["dataset"],)).fetchone()
+            if digest(loads(dataset["content"])) != dataset["sha"]:
+                raise Conflict("Stored dataset content does not match its fingerprint")
+            analysis = loads(result["result"])
+            if analysis["input_sha256"] != dataset["sha"] or analysis["policy_sha256"] != result["policy_sha"]:
+                raise Conflict("Analysis lineage does not match its recorded inputs")
+            decision = db.execute("SELECT * FROM decisions WHERE campaign=? AND run=? ORDER BY id DESC LIMIT 1", (campaign, run)).fetchone()
+            latest = latest_dataset(db, campaign)
+            return {"campaign": study, "run": run, "dataset_revision": dataset["revision"],
+                    "superseded": latest["id"] != dataset["id"], "input": loads(dataset["content"]),
+                    "analysis": analysis, "review": dict(decision) if decision else None}
+
+"""Durable analysis leases with fencing and atomic publication into review history."""
+import time
+import uuid
+from .database import initialize, transaction
+from .repository import get_campaign, latest_dataset, event, now
+from .codec import loads, dumps, digest, number, text
+from .policy import resolve
+from .errors import Conflict, WorkbenchError
+from . import ENGINE_VERSION
+
+
+def find(db, identifier):
+    job = db.execute("SELECT * FROM jobs WHERE id=?", (identifier,)).fetchone()
+    if job is None:
+        raise WorkbenchError("Unknown job")
+    return job
+
+
+def owner(job, token, clock):
+    if job["state"] != "running" or job["token"] != token or job["lease_until"] <= clock:
+        raise Conflict("Worker lease is absent, expired or superseded")
+
+
+class Jobs:
+    def __init__(self, path):
+        self.path = str(path)
+        initialize(self.path)
+
+    def submit(self, campaign, policy=None):
+        with transaction(self.path) as db:
+            study = get_campaign(db, campaign)
+            dataset = latest_dataset(db, campaign)
+            settings = resolve(study["kind"], policy)
+            key = digest(settings)
+            row = db.execute("SELECT id FROM jobs WHERE campaign=? AND policy_sha=? AND engine=?",
+                             (campaign, key, ENGINE_VERSION)).fetchone()
+            if row:
+                return {"job": row["id"], "reused": True}
+            identifier = uuid.uuid4().hex
+            db.execute("INSERT INTO jobs(id,campaign,dataset,policy_sha,policy,engine,state) VALUES (?,?,?,?,?,?,'queued')",
+                       (identifier, campaign, dataset["id"], key, dumps(settings), ENGINE_VERSION))
+            event(db, campaign, "job_submitted", {"job": identifier, "dataset": dataset["id"]})
+            return {"job": identifier, "reused": False}
+
+    def claim(self, identifier, worker, seconds=60):
+        worker = text(worker, "worker")
+        seconds = number(seconds, "lease seconds", 1, 3600)
+        with transaction(self.path) as db:
+            job, clock = find(db, identifier), time.time()
+            if job["state"] == "complete":
+                raise Conflict("Job is already complete")
+            if job["state"] == "running" and job["lease_until"] > clock:
+                raise Conflict("Job is held by an active worker")
+            if job["state"] == "running":
+                db.execute("UPDATE job_attempts SET state='expired',ended=? WHERE job=? AND generation=?",
+                           (clock, identifier, job["generation"]))
+            generation, token = job["generation"] + 1, uuid.uuid4().hex
+            db.execute("UPDATE jobs SET state='running',generation=?,token=?,lease_until=?,staged=NULL WHERE id=?",
+                       (generation, token, clock + seconds, identifier))
+            db.execute("INSERT INTO job_attempts(job,generation,worker,token,started,state) VALUES (?,?,?,?,?,'running')",
+                       (identifier, generation, worker, token, clock))
+            event(db, job["campaign"], "job_claimed", {"job": identifier, "generation": generation, "worker": worker})
+            return {"job": identifier, "token": token, "generation": generation, "lease_until": clock + seconds}
+
+    def heartbeat(self, identifier, token, seconds=60):
+        seconds = number(seconds, "lease seconds", 1, 3600)
+        with transaction(self.path) as db:
+            job, clock = find(db, identifier), time.time()
+            owner(job, token, clock)
+            expiry = max(job["lease_until"], clock + seconds)
+            db.execute("UPDATE jobs SET lease_until=? WHERE id=?", (expiry, identifier))
+            return {"job": identifier, "lease_until": expiry}
+
+    def compute(self, identifier, token):
+        with transaction(self.path) as db:
+            job = find(db, identifier)
+            owner(job, token, time.time())
+            if job["engine"] != ENGINE_VERSION:
+                raise Conflict("Job belongs to a different analysis engine")
+            dataset = db.execute("SELECT * FROM datasets WHERE id=?", (job["dataset"],)).fetchone()
+            data, policy = loads(dataset["content"]), loads(job["policy"])
+            if digest(data) != dataset["sha"] or digest(policy) != job["policy_sha"]:
+                raise Conflict("Stored inputs do not match job fingerprints")
+        from .engine import analyze
+        result = analyze(data, policy)
+        with transaction(self.path) as db:
+            current = find(db, identifier)
+            owner(current, token, time.time())
+            db.execute("UPDATE jobs SET staged=? WHERE id=?", (dumps(result), identifier))
+        return {"job": identifier, "staged": True}
+
+    def publish(self, identifier, token):
+        with transaction(self.path) as db:
+            job, clock = find(db, identifier), time.time()
+            if job["state"] == "complete" and job["token"] == token:
+                return {"job": identifier, "run": job["published_run"], "reused": True}
+            owner(job, token, clock)
+            if job["staged"] is None:
+                raise Conflict("Compute the result before publication")
+            result = loads(job["staged"])
+            dataset = db.execute("SELECT * FROM datasets WHERE id=?", (job["dataset"],)).fetchone()
+            if (digest(loads(dataset["content"])) != dataset["sha"] or
+                result["input_sha256"] != dataset["sha"] or result["policy_sha256"] != job["policy_sha"] or
+                result["engine_version"] != job["engine"]):
+                raise Conflict("Staged result does not match the pinned job inputs")
+            existing = db.execute("SELECT * FROM runs WHERE campaign=? AND dataset=? AND policy_sha=? AND engine=?",
+                                  (job["campaign"], job["dataset"], job["policy_sha"], job["engine"])).fetchone()
+            if existing and existing["status"] != "complete":
+                raise Conflict("A synchronous analysis already occupies this run key")
+            run = existing["id"] if existing else uuid.uuid4().hex
+            if not existing:
+                db.execute("INSERT INTO runs(id,campaign,dataset,policy_sha,policy,engine,status,result,created,finished) VALUES (?,?,?,?,?,?,'complete',?,?,?)",
+                           (run, job["campaign"], job["dataset"], job["policy_sha"], job["policy"], job["engine"], job["staged"], now(), now()))
+            elif existing["result"] != job["staged"]:
+                raise Conflict("Existing result differs from the staged result")
+            db.execute("UPDATE jobs SET state='complete',published_run=?,staged=NULL WHERE id=?", (run, identifier))
+            db.execute("UPDATE job_attempts SET state='complete',ended=? WHERE job=? AND generation=?", (clock, identifier, job["generation"]))
+            event(db, job["campaign"], "job_published", {"job": identifier, "run": run, "generation": job["generation"]})
+            return {"job": identifier, "run": run, "reused": bool(existing)}
+"""Durable source staging and atomic publication into ordinary study revisions."""
+import hashlib
+import re
+import uuid
+from .codec import require, text, integer, dumps, loads, digest
+from .database import initialize, transaction
+from .repository import get_campaign, event, now, store_dataset
+from .instrument_files import parse
+from .ingest_resolution import assemble
+from .errors import WorkbenchError, Conflict
+
+
+def manifest_contract(manifest):
+    require(manifest, ['delivery_id','expected_revision','sources'], 'manifest')
+    delivery = text(manifest['delivery_id'], 'delivery_id')
+    if delivery != manifest['delivery_id']:
+        raise WorkbenchError('delivery_id must be trimmed')
+    integer(manifest['expected_revision'], 'expected_revision')
+    if not isinstance(manifest['sources'], list) or not manifest['sources']:
+        raise WorkbenchError('sources must be a nonempty array')
+    seen = set()
+    for source in manifest['sources']:
+        require(source, ['id','kind','sha256'], 'source')
+        identifier = text(source['id'], 'source id')
+        if identifier != source['id'] or identifier in seen:
+            raise WorkbenchError('Source IDs must be unique and trimmed')
+        seen.add(identifier)
+        if source['kind'] not in {'readings','telemetry','transfer_history'}:
+            raise WorkbenchError('Source kind must be readings, telemetry or transfer_history')
+        if not isinstance(source['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', source['sha256']):
+            raise WorkbenchError('Source sha256 must be lowercase hexadecimal')
+    if not any(s['kind'] == 'readings' for s in manifest['sources']):
+        raise WorkbenchError('At least one readings source is required')
+    if sum(s['kind']=='transfer_history' for s in manifest['sources']) > 1:
+        raise WorkbenchError('A delivery accepts one complete transfer history source')
+    # Source list order has no semantic meaning; all other supplied fields remain bound.
+    return dict(manifest, sources=sorted(manifest['sources'], key=lambda s:s['id']))
+
+
+def session_row(db, identifier):
+    row = db.execute('SELECT * FROM ingest_sessions WHERE id=?', (identifier,)).fetchone()
+    if row is None:
+        raise WorkbenchError('Unknown ingestion session')
+    if digest(loads(row['manifest'])) != row['manifest_sha']:
+        raise Conflict('Stored manifest fingerprint mismatch')
+    return row
+
+
+def current_revision(db, campaign):
+    return db.execute('SELECT COALESCE(MAX(revision),0) FROM datasets WHERE campaign=?', (campaign,)).fetchone()[0]
+
+
+class Ingestion:
+    def __init__(self, path):
+        self.path = str(path)
+        initialize(path)
+
+    def open(self, campaign, manifest):
+        manifest = manifest_contract(manifest)
+        key = digest(manifest)
+        with transaction(self.path) as db:
+            if get_campaign(db, campaign)['kind'] != 'screening':
+                raise WorkbenchError('Instrument ingestion requires a screening campaign')
+            old = db.execute('SELECT * FROM ingest_sessions WHERE campaign=? AND delivery_key=?',
+                             (campaign, manifest['delivery_id'])).fetchone()
+            if old:
+                if old['manifest_sha'] != key:
+                    raise Conflict('Delivery identifier already binds another manifest')
+                return {'session':old['id'], 'state':old['state'], 'reused':True}
+            if current_revision(db, campaign) != manifest['expected_revision']:
+                raise Conflict('Campaign revision changed before opening the delivery')
+            identifier = uuid.uuid4().hex
+            db.execute('INSERT INTO ingest_sessions VALUES (?,?,?,?,?,?,?,NULL,?)',
+                       (identifier, campaign, manifest['delivery_id'], dumps(manifest), key,
+                        manifest['expected_revision'], 'open', now()))
+            for source in manifest['sources']:
+                db.execute("INSERT INTO ingest_sources(session,source_id,state,diagnostics) VALUES (?,?,'pending','[]')",
+                           (identifier, source['id']))
+            event(db, campaign, 'ingest_opened', {'session':identifier, 'manifest_sha256':key})
+            return {'session':identifier, 'state':'open', 'reused':False}
+
+    def add(self, identifier, source_id, raw):
+        if len(raw) > 20*1024*1024:
+            raise WorkbenchError('Source exceeds 20 MiB')
+        sha = hashlib.sha256(raw).hexdigest()
+        with transaction(self.path) as db:
+            session = session_row(db, identifier)
+            if session['state'] != 'open':
+                raise Conflict('Ingestion session is not open')
+            manifest = loads(session['manifest'])
+            spec = next((s for s in manifest['sources'] if s['id'] == source_id), None)
+            if spec is None:
+                raise WorkbenchError('Source is not declared in the manifest')
+            previous = db.execute('SELECT * FROM ingest_sources WHERE session=? AND source_id=?',
+                                  (identifier, source_id)).fetchone()
+            if previous['state'] == 'accepted':
+                if previous['sha'] != sha:
+                    raise Conflict('An accepted source cannot be replaced')
+                return {'source':source_id, 'state':'accepted', 'reused':True, 'diagnostics':[]}
+            if sha != spec['sha256']:
+                rows, errors = [], [{'line':0, 'error':'Source fingerprint differs from manifest'}]
+            else:
+                rows, errors = parse(raw, spec['kind'])
+            state = 'rejected' if errors else 'accepted'
+            db.execute('UPDATE ingest_sources SET state=?,raw=?,sha=?,parsed=?,diagnostics=? WHERE session=? AND source_id=?',
+                       (state, raw, sha, dumps(rows), dumps(errors), identifier, source_id))
+            db.execute('INSERT INTO ingest_attempts(session,source_id,sha,state,diagnostics) VALUES (?,?,?,?,?)',
+                       (identifier, source_id, sha, state, dumps(errors)))
+            return {'source':source_id, 'state':state, 'reused':False, 'rows':len(rows), 'diagnostics':errors}
+
+    def show(self, identifier):
+        with transaction(self.path) as db:
+            session = dict(session_row(db, identifier))
+            session['manifest'] = loads(session['manifest'])
+            sources = [dict(r) for r in db.execute('SELECT source_id,state,sha,diagnostics FROM ingest_sources WHERE session=? ORDER BY source_id', (identifier,))]
+            for source in sources:
+                source['diagnostics'] = loads(source['diagnostics'])
+            attempts = [dict(r) for r in db.execute('SELECT sequence,source_id,sha,state,diagnostics FROM ingest_attempts WHERE session=? ORDER BY sequence', (identifier,))]
+            for attempt in attempts:
+                attempt['diagnostics'] = loads(attempt['diagnostics'])
+            session.update(sources=sources, attempts=attempts)
+            return session
+
+    def preview(self, identifier):
+        with transaction(self.path) as db:
+            session = session_row(db, identifier)
+            if session['state'] == 'cancelled':
+                raise Conflict('Ingestion session was cancelled')
+            data = assemble(loads(session['manifest']), db.execute('SELECT * FROM ingest_sources WHERE session=?', (identifier,)).fetchall())
+            return {'session':identifier, 'input_sha256':digest(data), 'input':data,
+                    'base_current':current_revision(db, session['campaign']) == session['expected_revision']}
+
+    def publish(self, identifier):
+        with transaction(self.path) as db:
+            session = session_row(db, identifier)
+            if session['state'] == 'published':
+                dataset = db.execute('SELECT * FROM datasets WHERE id=?', (session['published_dataset'],)).fetchone()
+                return {'dataset':dataset['id'], 'revision':dataset['revision'], 'sha256':dataset['sha'], 'reused':True}
+            if session['state'] != 'open':
+                raise Conflict('Ingestion session is not open')
+            if current_revision(db, session['campaign']) != session['expected_revision']:
+                raise Conflict('Campaign advanced; open a delivery against the current revision')
+            data = assemble(loads(session['manifest']), db.execute('SELECT * FROM ingest_sources WHERE session=?', (identifier,)).fetchall())
+            result = store_dataset(db, session['campaign'], data)
+            db.execute("UPDATE ingest_sessions SET state='published',published_dataset=? WHERE id=?", (result['dataset'], identifier))
+            event(db, session['campaign'], 'ingest_published', {'session':identifier, 'dataset':result['dataset']})
+            return result
+
+    def cancel(self, identifier):
+        with transaction(self.path) as db:
+            session = session_row(db, identifier)
+            if session['state'] == 'published':
+                raise Conflict('Published evidence cannot be cancelled')
+            if session['state'] != 'cancelled':
+                db.execute("UPDATE ingest_sessions SET state='cancelled' WHERE id=?", (identifier,))
+                event(db, session['campaign'], 'ingest_cancelled', {'session':identifier})
+            return {'session':identifier, 'state':'cancelled'}

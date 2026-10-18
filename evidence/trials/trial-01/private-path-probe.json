@@ -1,0 +1,7 @@
+{
+  "/checks": false,
+  "/runner.py": false,
+  "/Users": false,
+  "/var/run/docker.sock": false,
+  "/root/.codex": false
+}

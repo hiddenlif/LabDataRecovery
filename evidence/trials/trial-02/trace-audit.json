@@ -1,0 +1,7 @@
+{
+  "completed_commands": 27,
+  "forbidden_command_mentions": [],
+  "container_removed": true,
+  "private_paths_absent": true,
+  "scope": "Lexical command and filesystem exposure checks; model network traffic not audited"
+}

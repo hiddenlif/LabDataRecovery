@@ -1,0 +1,504 @@
+"""Immutable input revisions, content-bound analyses and append-only review events."""
+from datetime import datetime, timezone
+import uuid
+from .database import initialize, transaction
+from .codec import dumps, loads, digest, text
+from .schema import validate, KINDS
+from .policy import resolve
+from .errors import WorkbenchError, Conflict
+from . import ENGINE_VERSION
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def event(db, campaign, action, payload):
+    db.execute("INSERT INTO events(campaign,action,payload,created) VALUES (?,?,?,?)",
+               (campaign, action, dumps(payload), now()))
+
+
+def get_campaign(db, campaign):
+    row = db.execute("SELECT * FROM campaigns WHERE id=?", (campaign,)).fetchone()
+    if row is None:
+        raise WorkbenchError("Unknown campaign")
+    return row
+
+
+def latest_dataset(db, campaign):
+    row = db.execute("SELECT * FROM datasets WHERE campaign=? ORDER BY revision DESC LIMIT 1", (campaign,)).fetchone()
+    if row is None:
+        raise WorkbenchError("Campaign has no dataset")
+    return row
+
+
+def store_dataset(db, campaign, data):
+    from .registry import normalize_input
+    validate(normalize_input(data))
+    sha = digest(data)
+    study = get_campaign(db, campaign)
+    if study["kind"] != data["kind"]:
+        raise WorkbenchError("Dataset kind differs from campaign")
+    latest = db.execute("SELECT * FROM datasets WHERE campaign=? ORDER BY revision DESC LIMIT 1", (campaign,)).fetchone()
+    from .dispensing import measurement_key
+    if latest and (latest["sha"] == sha or measurement_key(loads(latest["content"])) == measurement_key(data)):
+        return {"dataset": latest["id"], "revision": latest["revision"], "sha256": latest["sha"], "reused": True}
+    revision = latest["revision"] + 1 if latest else 1
+    identifier = uuid.uuid4().hex
+    db.execute("INSERT INTO datasets VALUES (?,?,?,?,?,?)", (identifier, campaign, revision, sha, dumps(data), now()))
+    event(db, campaign, "imported", {"dataset": identifier, "revision": revision, "sha256": sha})
+    return {"dataset": identifier, "revision": revision, "sha256": sha, "reused": False}
+
+
+class Repository:
+    def __init__(self, path):
+        self.path = str(path)
+        initialize(self.path)
+
+    def create(self, name, kind):
+        name = text(name, "campaign name")
+        if kind not in KINDS:
+            raise WorkbenchError("Unknown study kind")
+        campaign = uuid.uuid4().hex
+        with transaction(self.path) as db:
+            db.execute("INSERT INTO campaigns VALUES (?,?,?,?)", (campaign, name, kind, now()))
+            event(db, campaign, "created", {"kind": kind})
+        return {"campaign": campaign, "name": name, "kind": kind}
+
+    def import_data(self, campaign, data):
+        with transaction(self.path) as db:
+            return store_dataset(db, campaign, data)
+
+    def run(self, campaign, policy=None):
+        with transaction(self.path) as db:
+            study = get_campaign(db, campaign)
+            dataset = latest_dataset(db, campaign)
+            settings = resolve(study["kind"], policy)
+            key = digest(settings)
+            old = db.execute("SELECT * FROM runs WHERE campaign=? AND dataset=? AND policy_sha=? AND engine=?",
+                             (campaign, dataset["id"], key, ENGINE_VERSION)).fetchone()
+            if old and old["status"] == "complete":
+                return {"run": old["id"], "reused": True, "analysis": loads(old["result"])}
+            if old and old["status"] == "running":
+                raise Conflict("An identical analysis is already running")
+            identifier = old["id"] if old else uuid.uuid4().hex
+            if old:
+                db.execute("UPDATE runs SET status='running',error=NULL,finished=NULL WHERE id=?", (identifier,))
+            else:
+                db.execute("INSERT INTO runs(id,campaign,dataset,policy_sha,policy,engine,status,created) VALUES (?,?,?,?,?,?,'running',?)",
+                           (identifier, campaign, dataset["id"], key, dumps(settings), ENGINE_VERSION, now()))
+            event(db, campaign, "analysis_started", {"run": identifier, "dataset": dataset["id"]})
+        try:
+            from .engine import analyze
+            result = analyze(loads(dataset["content"]), settings)
+        except Exception as exc:
+            with transaction(self.path) as db:
+                db.execute("UPDATE runs SET status='failed',error=?,finished=? WHERE id=?", (str(exc), now(), identifier))
+                event(db, campaign, "analysis_failed", {"run": identifier, "error": str(exc)})
+            raise
+        with transaction(self.path) as db:
+            db.execute("UPDATE runs SET status='complete',result=?,finished=? WHERE id=?", (dumps(result), now(), identifier))
+            event(db, campaign, "analysis_completed", {"run": identifier, "result_sha256": digest(result)})
+        return {"run": identifier, "reused": False, "analysis": result}
+
+    def review(self, campaign, run, action, reviewer, note, expected_revision):
+        if action not in {"accept", "hold", "reject"}:
+            raise WorkbenchError("Review action must be accept, hold or reject")
+        text(reviewer, "reviewer"); text(note, "review note")
+        with transaction(self.path) as db:
+            get_campaign(db, campaign)
+            latest = latest_dataset(db, campaign)
+            result = db.execute("SELECT * FROM runs WHERE id=? AND campaign=?", (run, campaign)).fetchone()
+            if not result or result["status"] != "complete":
+                raise WorkbenchError("A complete analysis from this campaign is required")
+            if result["dataset"] != latest["id"] or expected_revision != latest["revision"]:
+                raise Conflict("Dataset changed; refresh the campaign and analyze its current revision")
+            cursor = db.execute("INSERT INTO decisions(campaign,run,action,reviewer,note,created) VALUES (?,?,?,?,?,?)",
+                                (campaign, run, action, reviewer, note, now()))
+            event(db, campaign, "reviewed", {"run": run, "decision": cursor.lastrowid, "action": action})
+            return {"decision": cursor.lastrowid, "action": action, "run": run}
+
+    def show(self, campaign):
+        with transaction(self.path) as db:
+            study = dict(get_campaign(db, campaign))
+            datasets = [dict(r) for r in db.execute("SELECT id,revision,sha,created FROM datasets WHERE campaign=? ORDER BY revision", (campaign,))]
+            runs = [dict(r) for r in db.execute("SELECT id,dataset,policy_sha,engine,status,error,created,finished FROM runs WHERE campaign=? ORDER BY created,id", (campaign,))]
+            decisions = [dict(r) for r in db.execute("SELECT * FROM decisions WHERE campaign=? ORDER BY id", (campaign,))]
+            latest_id = datasets[-1]["id"] if datasets else None
+            current_runs = {r["id"] for r in runs if r["dataset"] == latest_id and r["status"] == "complete"}
+            active = [d for d in decisions if d["run"] in current_runs]
+            study.update(datasets=datasets, runs=runs, decisions=decisions,
+                         current_review=active[-1] if active else None,
+                         current_revision=datasets[-1]["revision"] if datasets else None,
+                         events=[dict(r) for r in db.execute("SELECT * FROM events WHERE campaign=? ORDER BY id", (campaign,))])
+            return study
+
+    def snapshot(self, campaign, run):
+        with transaction(self.path) as db:
+            study = dict(get_campaign(db, campaign))
+            result = db.execute("SELECT * FROM runs WHERE id=? AND campaign=?", (run, campaign)).fetchone()
+            if not result or result["status"] != "complete":
+                raise WorkbenchError("A complete analysis from this campaign is required")
+            dataset = db.execute("SELECT * FROM datasets WHERE id=?", (result["dataset"],)).fetchone()
+            if digest(loads(dataset["content"])) != dataset["sha"]:
+                raise Conflict("Stored dataset content does not match its fingerprint")
+            analysis = loads(result["result"])
+            if analysis["input_sha256"] != dataset["sha"] or analysis["policy_sha256"] != result["policy_sha"]:
+                raise Conflict("Analysis lineage does not match its recorded inputs")
+            decision = db.execute("SELECT * FROM decisions WHERE campaign=? AND run=? ORDER BY id DESC LIMIT 1", (campaign, run)).fetchone()
+            latest = latest_dataset(db, campaign)
+            return {"campaign": study, "run": run, "dataset_revision": dataset["revision"],
+                    "superseded": latest["id"] != dataset["id"], "input": loads(dataset["content"]),
+                    "analysis": analysis, "review": dict(decision) if decision else None}
+
+"""Durable analysis leases with fencing and atomic publication into review history."""
+import time
+import uuid
+from .database import initialize, transaction
+from .repository import get_campaign, latest_dataset, event, now
+from .codec import loads, dumps, digest, number, text
+from .policy import resolve
+from .errors import Conflict, WorkbenchError
+from . import ENGINE_VERSION
+
+
+def find(db, identifier):
+    job = db.execute("SELECT * FROM jobs WHERE id=?", (identifier,)).fetchone()
+    if job is None:
+        raise WorkbenchError("Unknown job")
+    return job
+
+
+def owner(job, token, clock):
+    if job["state"] != "running" or job["token"] != token or job["lease_until"] <= clock:
+        raise Conflict("Worker lease is absent, expired or superseded")
+
+
+class Jobs:
+    def __init__(self, path):
+        self.path = str(path)
+        initialize(self.path)
+
+    def submit(self, campaign, policy=None):
+        with transaction(self.path) as db:
+            study = get_campaign(db, campaign)
+            dataset = latest_dataset(db, campaign)
+            settings = resolve(study["kind"], policy)
+            key = digest(settings)
+            row = db.execute("SELECT id FROM jobs WHERE campaign=? AND policy_sha=? AND engine=?",
+                             (campaign, key, ENGINE_VERSION)).fetchone()
+            if row:
+                return {"job": row["id"], "reused": True}
+            identifier = uuid.uuid4().hex
+            db.execute("INSERT INTO jobs(id,campaign,dataset,policy_sha,policy,engine,state) VALUES (?,?,?,?,?,?,'queued')",
+                       (identifier, campaign, dataset["id"], key, dumps(settings), ENGINE_VERSION))
+            event(db, campaign, "job_submitted", {"job": identifier, "dataset": dataset["id"]})
+            return {"job": identifier, "reused": False}
+
+    def claim(self, identifier, worker, seconds=60):
+        worker = text(worker, "worker")
+        seconds = number(seconds, "lease seconds", 1, 3600)
+        with transaction(self.path) as db:
+            job, clock = find(db, identifier), time.time()
+            if job["state"] == "complete":
+                raise Conflict("Job is already complete")
+            if job["state"] == "running" and job["lease_until"] > clock:
+                raise Conflict("Job is held by an active worker")
+            if job["state"] == "running":
+                db.execute("UPDATE job_attempts SET state='expired',ended=? WHERE job=? AND generation=?",
+                           (clock, identifier, job["generation"]))
+            generation, token = job["generation"] + 1, uuid.uuid4().hex
+            db.execute("UPDATE jobs SET state='running',generation=?,token=?,lease_until=?,staged=NULL WHERE id=?",
+                       (generation, token, clock + seconds, identifier))
+            db.execute("INSERT INTO job_attempts(job,generation,worker,token,started,state) VALUES (?,?,?,?,?,'running')",
+                       (identifier, generation, worker, token, clock))
+            event(db, job["campaign"], "job_claimed", {"job": identifier, "generation": generation, "worker": worker})
+            return {"job": identifier, "token": token, "generation": generation, "lease_until": clock + seconds}
+
+    def heartbeat(self, identifier, token, seconds=60):
+        seconds = number(seconds, "lease seconds", 1, 3600)
+        with transaction(self.path) as db:
+            job, clock = find(db, identifier), time.time()
+            owner(job, token, clock)
+            expiry = max(job["lease_until"], clock + seconds)
+            db.execute("UPDATE jobs SET lease_until=? WHERE id=?", (expiry, identifier))
+            return {"job": identifier, "lease_until": expiry}
+
+    def compute(self, identifier, token):
+        with transaction(self.path) as db:
+            job = find(db, identifier)
+            owner(job, token, time.time())
+            if job["engine"] != ENGINE_VERSION:
+                raise Conflict("Job belongs to a different analysis engine")
+            dataset = db.execute("SELECT * FROM datasets WHERE id=?", (job["dataset"],)).fetchone()
+            data, policy = loads(dataset["content"]), loads(job["policy"])
+            if digest(data) != dataset["sha"] or digest(policy) != job["policy_sha"]:
+                raise Conflict("Stored inputs do not match job fingerprints")
+        from .engine import analyze
+        result = analyze(data, policy)
+        with transaction(self.path) as db:
+            current = find(db, identifier)
+            owner(current, token, time.time())
+            db.execute("UPDATE jobs SET staged=? WHERE id=?", (dumps(result), identifier))
+        return {"job": identifier, "staged": True}
+
+    def publish(self, identifier, token):
+        with transaction(self.path) as db:
+            job, clock = find(db, identifier), time.time()
+            if job["state"] == "complete" and job["token"] == token:
+                return {"job": identifier, "run": job["published_run"], "reused": True}
+            owner(job, token, clock)
+            if job["staged"] is None:
+                raise Conflict("Compute the result before publication")
+            result = loads(job["staged"])
+            dataset = db.execute("SELECT * FROM datasets WHERE id=?", (job["dataset"],)).fetchone()
+            if (digest(loads(dataset["content"])) != dataset["sha"] or
+                result["input_sha256"] != dataset["sha"] or result["policy_sha256"] != job["policy_sha"] or
+                result["engine_version"] != job["engine"]):
+                raise Conflict("Staged result does not match the pinned job inputs")
+            existing = db.execute("SELECT * FROM runs WHERE campaign=? AND dataset=? AND policy_sha=? AND engine=?",
+                                  (job["campaign"], job["dataset"], job["policy_sha"], job["engine"])).fetchone()
+            if existing and existing["status"] != "complete":
+                raise Conflict("A synchronous analysis already occupies this run key")
+            run = existing["id"] if existing else uuid.uuid4().hex
+            if not existing:
+                db.execute("INSERT INTO runs(id,campaign,dataset,policy_sha,policy,engine,status,result,created,finished) VALUES (?,?,?,?,?,?,'complete',?,?,?)",
+                           (run, job["campaign"], job["dataset"], job["policy_sha"], job["policy"], job["engine"], job["staged"], now(), now()))
+            elif existing["result"] != job["staged"]:
+                raise Conflict("Existing result differs from the staged result")
+            db.execute("UPDATE jobs SET state='complete',published_run=?,staged=NULL WHERE id=?", (run, identifier))
+            db.execute("UPDATE job_attempts SET state='complete',ended=? WHERE job=? AND generation=?", (clock, identifier, job["generation"]))
+            event(db, job["campaign"], "job_published", {"job": identifier, "run": run, "generation": job["generation"]})
+            return {"job": identifier, "run": run, "reused": bool(existing)}
+"""Resolve complete deliveries from original bytes, independently of arrival order."""
+import hashlib
+from .codec import digest, loads
+from .instrument_files import parse
+from .schema import validate
+from .calibration import reconcile
+from .errors import WorkbenchError, Conflict
+
+
+def assemble(manifest, sources):
+    by_id = {s['source_id']:s for s in sources}
+    pending = [s['id'] for s in manifest['sources'] if by_id[s['id']]['state'] != 'accepted']
+    if pending:
+        raise Conflict('Sources not accepted: ' + ', '.join(sorted(pending)))
+    wells, transfers, original, history = {}, {}, [], None
+    for spec in sorted(manifest['sources'], key=lambda s:s['id']):
+        saved = by_id[spec['id']]
+        raw = bytes(saved['raw'])
+        if hashlib.sha256(raw).hexdigest() != spec['sha256']:
+            raise Conflict('Stored source fingerprint mismatch: ' + spec['id'])
+        parsed, errors = parse(raw, spec['kind'])
+        if errors:
+            raise Conflict('Stored source no longer parses: ' + spec['id'])
+        original.append({'id':spec['id'], 'kind':spec['kind'], 'sha256':spec['sha256'],
+                         'text':raw.decode('utf-8')})
+        if spec['kind'] == 'transfer_history':
+            history = parsed[0]['record']
+            continue
+        for item in parsed:
+            row = item['record']
+            key = (row['plate'], row['well'], row['revision'])
+            table = wells if spec['kind'] == 'readings' else transfers
+            if key in table and digest(table[key]['record']) != digest(row):
+                raise Conflict(f'Conflicting {spec["kind"]} for {key}')
+            entry = table.setdefault(key, {'record':row, 'sources':[]})
+            entry['sources'].append({'source':spec['id'], 'line':item['line']})
+    chosen = {}
+    for (plate, well, revision), item in sorted(wells.items()):
+        if (plate, well) not in chosen or revision > chosen[(plate,well)]['record']['revision']:
+            chosen[(plate,well)] = item
+    records, lineage = [], []
+    for key, item in sorted(chosen.items()):
+        row = dict(item['record']); revision = row.pop('revision')
+        records.append(row)
+        lineage.append({'record':row['id'], 'plate':row['plate'], 'well':row['well'],
+                        'reading_revision':revision, 'sources':item['sources']})
+    telemetry = [item['record'] for _, item in sorted(transfers.items())]
+    data = {'kind':'screening', 'records':records, 'telemetry':telemetry,
+            'ingestion':{'manifest':manifest, 'sources':original, 'record_lineage':lineage}}
+    if history is not None:
+        data['transfer_history'] = history
+    validate(data)
+    from .dispensing import resolve
+    resolve(data)
+    for plate in {r['plate'] for r in records}:
+        if len({r['assay'] for r in records if r['plate'] == plate}) != 1:
+            raise WorkbenchError('Plate has inconsistent assay labels: ' + plate)
+    return data
+"""Portable reports are created from one transactional snapshot."""
+import csv
+import hashlib
+import html
+import io
+import os
+from pathlib import Path
+import shutil
+import tempfile
+from .codec import dumps, loads
+from .errors import WorkbenchError
+
+STYLE = """
+body{font:16px/1.6 system-ui,sans-serif;background:#f4f6f8;color:#183145;margin:0}
+main{max-width:1180px;margin:36px auto;padding:40px;background:white;border-radius:16px}
+h1{font-size:36px;margin:0 0 8px}h2{margin-top:32px;color:#116c70}small,.muted{color:#607584}
+.tag{display:inline-block;background:#e1f3f0;padding:5px 12px;border-radius:20px;font-size:13px}
+table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid #dce5e8}
+th{background:#eff5f6}code{word-break:break-all}pre{white-space:pre-wrap;font-size:12px}
+.notice{border-left:4px solid #df9d2a;padding:12px 18px;background:#fff9ec}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+svg{max-width:100%;height:auto;background:#fafcfc;border:1px solid #e0e8eb;border-radius:8px}
+details{margin:24px 0}a{color:#116c70}@media(max-width:800px){main{margin:12px;padding:20px}.grid{display:block}}
+"""
+
+
+def esc(value):
+    return html.escape(str(value))
+
+
+def table(rows):
+    if not rows:
+        return '<p class="muted">No records.</p>'
+    keys = list(rows[0])
+    def cell(value):
+        if value is None:
+            return "Not estimated"
+        if isinstance(value, float):
+            return f"{value:.6g}"
+        return dumps(value) if isinstance(value, (dict, list)) else str(value)
+    return "<table><thead><tr>" + "".join(f"<th>{esc(k.replace('_', ' '))}</th>" for k in keys) + "</tr></thead><tbody>" + "".join("<tr>" + "".join(f"<td>{esc(cell(row.get(k)))}</td>" for k in keys) + "</tr>" for row in rows) + "</tbody></table>"
+
+
+def summary_rows(analysis):
+    r, kind = analysis["result"], analysis["kind"]
+    if kind == "screening":
+        return [{"compound": v["compound"], "disposition": v["disposition"],
+                 "primary_ic50_um": v["channels"]["primary"]["ic50_um"], "flags": ", ".join(v["flags"])} for v in r["compounds"]]
+    if kind == "bridge":
+        return [{"status": r["status"], "donors": r["donor_count"], "ratio": r["ratio"], "interval": r["interval"]}]
+    if kind == "stability":
+        return [{"batch": b["batch"], "status": b["status"], "supported_time_h": b["supported_time_h"],
+                 "slope_per_h": b.get("slope_per_h")} for b in r["batches"]]
+    return r["levels"]
+
+
+def curve_svg(analysis):
+    series = []
+    if analysis["kind"] == "stability":
+        for batch in analysis["result"]["batches"]:
+            if batch["status"] == "estimated":
+                series.append((batch["batch"], [(r["time_h"], r["lower_mean_bound"]) for r in batch["curve"]]))
+        xlabel = "Time (hours); lines show lower mean-response bounds"
+    elif analysis["kind"] == "screening":
+        import math
+        for compound in analysis["result"]["compounds"]:
+            points = compound["channels"]["primary"]["observations"]
+            series.append((compound["compound"], sorted((math.log10(r["dose_um"]), r["inhibition"]) for r in points)))
+        xlabel = "Log10 concentration (micromolar); primary assay inhibition (%)"
+    else:
+        return ""
+    points = [p for _, rows in series for p in rows]
+    if not points:
+        return ""
+    xmin, xmax = min(p[0] for p in points), max(p[0] for p in points)
+    ymin, ymax = min(p[1] for p in points), max(p[1] for p in points)
+    colors = ["#147d92", "#d57d36", "#664aaa", "#36855c", "#ba4b6b", "#6a6e27"]
+    body = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 390" role="img" aria-label="Analysis curves">']
+    body.append('<path d="M65 25V315H965" fill="none" stroke="#738a95"/>')
+    for frac in [0, .25, .5, .75, 1]:
+        y = 315 - frac * 280
+        body.append(f'<text x="8" y="{y}" font-size="12">{ymin + frac * (ymax-ymin):.2g}</text>')
+        x = 65 + frac * 890
+        body.append(f'<text x="{x}" y="335" font-size="12">{xmin + frac * (xmax-xmin):.2g}</text>')
+    for i, (name, rows) in enumerate(series):
+        coords = [(65 + (x-xmin) / max(xmax-xmin, 1e-9) * 890, 315 - (y-ymin) / max(ymax-ymin, 1e-9) * 280) for x, y in rows]
+        color = colors[i % len(colors)]
+        if analysis["kind"] == "stability":
+            body.append(f'<polyline points="{" ".join(f"{x:.2f},{y:.2f}" for x,y in coords)}" stroke="{color}" fill="none" stroke-width="2"/>')
+        else:
+            body.extend(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="2.6" fill="{color}"/>' for x, y in coords)
+        body.append(f'<text x="{70 + i*145}" y="360" fill="{color}" font-size="12">{esc(name)}</text>')
+    body.append(f'<text x="65" y="382" font-size="12">{esc(xlabel)}</text></svg>')
+    return "".join(body)
+
+
+def transfer_rows(analysis):
+    rows = [dict(campaign=h['campaign'], history_revision=h['revision'], **b)
+            for h in analysis['result'].get('transfer_history') or [] for b in h['bindings']]
+    grouped = {(row['campaign'], row['compound'], row['dose_um']):row for row in rows}
+    return list(grouped.values())
+
+
+def render(snapshot):
+    a = snapshot["analysis"]
+    title = snapshot["campaign"]["name"]
+    review = snapshot.get("review")
+    status = review["action"] if review else "Awaiting review"
+    notice = "Historical snapshot: a newer input revision is available." if snapshot["superseded"] else "This report records the selected analysis and its review snapshot."
+    details = ""
+    if a["kind"] == "screening":
+        details = "<h2>Plate quality</h2>" + table(a["result"]["plates"]) + "<h2>Excluded observations</h2>" + table(a["result"]["excluded"])
+        if a["result"].get("identity_catalog"):
+            details += "<h2>Campaign identities</h2>" + table(a["result"]["identity_catalog"])
+    elif a["kind"] == "bridge":
+        details = "<h2>Independent donors</h2>" + table(a["result"]["donors"]) + "<h2>Unpaired or unusable samples</h2>" + table(a["result"]["excluded"])
+    elif a["kind"] == "rare_events":
+        details = "<h2>Batch and level qualification</h2>" + table(a["result"]["batch_levels"])
+    if a['result'].get('transfer_history'):
+        details += '<h2>Dispensing transfer history</h2>' + table(transfer_rows(a))
+        details += '<p>Concentrations reconstruct homogeneous liquid transfers from corrected measured volumes. Unknown contents remain unresolved.</p>'
+    if a['result'].get('calibration'):
+        details += '<h2>Calibration uncertainty</h2><pre>' + esc(dumps(a['result']['calibration'])) + '</pre>'
+        details += '<p>Intervals use first-order log-dose propagation with shared error sources; this is a local approximation.</p>'
+        details += table([dict(compound=c['compound'], assay=assay, **channel.get('uncertainty', {}))
+                          for c in a['result']['compounds'] for assay,channel in c['channels'].items()
+                          if 'uncertainty' in channel])
+    if "ingestion" in snapshot["input"]:
+        evidence = snapshot["input"]["ingestion"]
+        details += "<h2>Instrument source lineage</h2>" + table(evidence["record_lineage"])
+        details += "<details><summary>Delivery manifest</summary><pre>" + esc(dumps(evidence["manifest"])) + "</pre></details>"
+    return f'<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} | TrueGate</title><style>{STYLE}</style><main><small>TRUEGATE · SCIENTIFIC WORKBENCH</small><h1>{esc(title)}</h1><span class="tag">{esc(a["kind"])}</span> <span class="tag">{esc(status)}</span><p class="notice">{esc(notice)}</p><p>{esc(a["result"].get("interpretation", ""))}</p><h2>Results</h2>{table(summary_rows(a))}<p>{curve_svg(a)}</p>{details}<h2>Traceability</h2>{table([{"input revision":snapshot["dataset_revision"],"run":snapshot["run"],"engine":a["engine_version"]}])}<p>Input fingerprint: <code>{esc(a["input_sha256"])}</code><br>Policy fingerprint: <code>{esc(a["policy_sha256"])}</code></p><details><summary>Analysis settings</summary><pre>{esc(dumps(a["policy"]))}</pre></details><details><summary>Review record</summary><pre>{esc(dumps(review))}</pre></details><p><a href="summary.csv">Download summary</a> · <a href="snapshot.json">Complete analysis and inputs</a> · <a href="manifest.json">File fingerprints</a></p><small>Example studies are synthetic demonstrations. This application does not certify clinical performance or authorize product release.</small></main></html>'
+
+
+def export(snapshot, destination):
+    destination = Path(destination)
+    if destination.exists():
+        raise WorkbenchError("Report destination already exists; choose a new directory")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=".report-", dir=destination.parent))
+    try:
+        (temporary / "snapshot.json").write_text(dumps(snapshot) + "\n")
+        (temporary / "index.html").write_text(render(snapshot), encoding="utf-8")
+        rows = summary_rows(snapshot["analysis"])
+        with (temporary / "summary.csv").open("w", newline="", encoding="utf-8") as stream:
+            if rows:
+                writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+                writer.writeheader(); writer.writerows(rows)
+        evidence = transfer_rows(snapshot['analysis'])
+        if snapshot['analysis']['result'].get('transfer_history'):
+            fields = ['campaign','history_revision','record_id','vessel','sequence','status','dose_um','volume_ul','known','compound','amounts_pmol','lineage']
+            with (temporary/'transfer-bindings.csv').open('w',newline='',encoding='utf-8') as stream:
+                writer = csv.DictWriter(stream,fieldnames=fields)
+                writer.writeheader()
+                writer.writerows({k:(dumps(row.get(k)) if isinstance(row.get(k),(dict,list)) else row.get(k)) for k in fields} for row in evidence)
+        manifest = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(temporary.iterdir())}
+        (temporary / "manifest.json").write_text(dumps(manifest) + "\n")
+        os.rename(temporary, destination)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+    return {"report": str(destination), "files": manifest}
+
+
+def verify(destination):
+    directory = Path(destination)
+    manifest = loads((directory / "manifest.json").read_text())
+    if not isinstance(manifest, dict) or set(manifest) not in ({"snapshot.json", "index.html", "summary.csv"}, {"snapshot.json", "index.html", "summary.csv", "transfer-bindings.csv"}):
+        raise WorkbenchError("Unexpected report manifest")
+    for name, sha in manifest.items():
+        p = directory / name
+        if p.is_symlink() or not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest() != sha:
+            raise WorkbenchError(f"Report integrity check failed: {name}")
+    return {"verified": True, "files": len(manifest)}
+

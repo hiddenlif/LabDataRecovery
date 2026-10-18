@@ -1,0 +1,19 @@
+....F...                                                                 [100%]
+=================================== FAILURES ===================================
+___________ test_repeat_adopts_partial_progress_without_new_changes ____________
+
+client = <conftest.Client object at 0xffff813c5480>
+
+    def test_repeat_adopts_partial_progress_without_new_changes(client):
+        setup(client);first=apply(client);before=state(client.db)
+        repeat=command(client,backup=client.directory/'backup-repeat.db')
+        assert state(client.db)==before
+        selected={c['campaign'] for c in O['cases'] if not c['blocked']}
+>       assert all(e['status']=='already_recovered' for e in repeat['studies'] if e['campaign'] in selected)
+E       assert False
+E        +  where False = all(<generator object test_repeat_adopts_partial_progress_without_new_changes.<locals>.<genexpr> at 0xffff802b1cb0>)
+
+test_16_recovery_evolution.py:56: AssertionError
+=========================== short test summary info ============================
+FAILED test_16_recovery_evolution.py::test_repeat_adopts_partial_progress_without_new_changes
+1 failed, 7 passed in 10.32s

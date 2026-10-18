@@ -1,0 +1,16 @@
+{
+  "delivery_id": "screen-panel",
+  "expected_revision": 0,
+  "sources": [
+    {
+      "id": "readings",
+      "kind": "readings",
+      "sha256": "639996162141ea2b1ac0df2017309cbd4211c4efbf9d4b47518832874db06a5f"
+    },
+    {
+      "id": "telemetry",
+      "kind": "telemetry",
+      "sha256": "b8c25c48c4ca362b3bc767f8582d6aec5f258a18aa2c707badc2d23517ad2d0d"
+    }
+  ]
+}

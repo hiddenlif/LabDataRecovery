@@ -1,0 +1,16 @@
+{
+  "delivery_id": "physical-delivery-A",
+  "expected_revision": 0,
+  "sources": [
+    {
+      "id": "readings",
+      "kind": "readings",
+      "sha256": "480419c339f312ee6b28ab2ff2b0498972334081376a5fb056e57434f86350ab"
+    },
+    {
+      "id": "history",
+      "kind": "transfer_history",
+      "sha256": "82237d6fcbce102a931d127089e2b6465eb0225ea45451be65d644c22aca3663"
+    }
+  ]
+}

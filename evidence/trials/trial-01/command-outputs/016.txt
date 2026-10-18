@@ -1,0 +1,24 @@
+{
+  "source_sha256": "bc4de222fc76eece5b91eb1a95ec7b4ee23d8de7e991bde5287a9ceea83f1a27",
+  "statuses": {
+    "blocked": 10,
+    "recovered": 18,
+    "unaffected": 12
+  },
+  "appended_datasets": 20,
+  "appended_events": 18,
+  "sessions_relinked": 24,
+  "jobs_rebound": 24,
+  "preserved_runs": 40,
+  "preserved_decisions": 40,
+  "checks": [
+    "read-only preview",
+    "consistent pre-mutation backup",
+    "preview/apply agreement",
+    "repeat safety",
+    "immutable evidence and historical results",
+    "SQLite integrity",
+    "partial operational consistency",
+    "supplied database unchanged"
+  ]
+}

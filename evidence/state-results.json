@@ -1,0 +1,128 @@
+{
+  "trial-01": [
+    {
+      "snapshot": "000",
+      "seconds": 139.14,
+      "passed": 3,
+      "failures": 5,
+      "errors": 0,
+      "accepted": false
+    },
+    {
+      "snapshot": "001",
+      "seconds": 225.75,
+      "passed": 3,
+      "failures": 5,
+      "errors": 0,
+      "accepted": false
+    },
+    {
+      "snapshot": "002",
+      "seconds": 280.2,
+      "passed": 7,
+      "failures": 1,
+      "errors": 0,
+      "accepted": false
+    },
+    {
+      "snapshot": "003",
+      "seconds": 397.13,
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    },
+    {
+      "snapshot": "004",
+      "seconds": 457.76,
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    }
+  ],
+  "trial-02": [
+    {
+      "snapshot": "000",
+      "seconds": 42.33,
+      "passed": 3,
+      "failures": 5,
+      "errors": 0,
+      "accepted": false
+    },
+    {
+      "snapshot": "001",
+      "seconds": 133.09,
+      "passed": 7,
+      "failures": 1,
+      "errors": 0,
+      "accepted": false
+    },
+    {
+      "snapshot": "002",
+      "seconds": 161.31,
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    },
+    {
+      "snapshot": "004",
+      "seconds": 310.59,
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    },
+    {
+      "snapshot": "009",
+      "seconds": 442.37,
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    },
+    {
+      "snapshot": "010",
+      "seconds": 466.72,
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    }
+  ],
+  "trial-03": [
+    {
+      "snapshot": "000",
+      "seconds": 94.73,
+      "passed": 3,
+      "failures": 5,
+      "errors": 0,
+      "accepted": false
+    },
+    {
+      "snapshot": "001",
+      "seconds": 165.3,
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    },
+    {
+      "snapshot": "002",
+      "seconds": 177.41,
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    },
+    {
+      "snapshot": "004",
+      "seconds": 310.42,
+      "passed": 8,
+      "failures": 0,
+      "errors": 0,
+      "accepted": true
+    }
+  ]
+}

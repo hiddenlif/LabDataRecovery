@@ -1,0 +1,10 @@
+{
+  "transfer-history/1": {
+    "binding_sequence": "next operation boundary, exclusive; canonical snapshot sequence is boundary minus one"
+  },
+  "transfer-history/2": {
+    "binding_sequence": "completed operation boundary, inclusive"
+  },
+  "default": "transfer-history/2",
+  "selection": "source descriptor codec; preserve original bytes and manifest; normalized histories use inclusive snapshots"
+}

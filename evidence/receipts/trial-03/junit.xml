@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="6" skipped="0" tests="185" time="254.088" timestamp="2026-10-18T21:12:31.675455+00:00" hostname="293a22a7db08"><testcase classname="test_01_screening" name="test_calibrated_dose_and_plate_controls[91-2.3]" time="0.951" /><testcase classname="test_01_screening" name="test_calibrated_dose_and_plate_controls[207-0.4]" time="0.889" /><testcase classname="test_01_screening" name="test_calibrated_dose_and_plate_controls[830-3.7]" time="0.889" /><testcase classname="test_01_screening" name="test_later_failure_removes_well_and_retains_reason" time="1.058" /><testcase classname="test_01_screening" name="test_same_well_name_on_other_plate_unchanged" time="0.891" /><testcase classname="test_01_screening" name="test_telemetry_conflict_rejected_but_exact_duplicate_allowed" time="1.677" /><testcase classname="test_01_screening" name="test_input_order_has_no_effect_on_estimates" time="1.830" /><testcase classname="test_01_screening" name="test_missing_telemetry_and_bad_plate_visible" time="1.053" /><testcase classname="test_01_screening" name="test_same_assay_on_different_instrument_scales" time="0.941" /><testcase classname="test_01_screening" name="test_no_telemetry_preserves_documented_nominal_mode" time="0.890" /><testcase classname="test_01_screening" name="test_partial_telemetry_preserves_other_plates_and_marks_modes" time="0.886" /><testcase classname="test_02_bridge" name="test_donor_weighting_not_well_weighting" time="0.778" /><testcase classname="test_02_bridge" name="test_replicating_technical_wells_does_not_create_donors" time="1.612" /><testcase classname="test_02_bridge" name="test_sample_id_scoped_to_donor_and_units_normalized" time="0.782" /><testcase classname="test_02_bridge" name="test_missing_counterpart_is_excluded_not_zero" time="0.725" /><testcase classname="test_02_bridge" name="test_minimum_counts_independent_donors" time="0.779" /><testcase classname="test_02_bridge" name="test_bootstrap_repeatable_and_order_invariant" time="1.824" /><testcase classname="test_02_bridge" name="test_incompatible_units_rejected" time="0.888" /><testcase classname="test_02_bridge" name="test_duplicate_samples_cannot_narrow_donor_interval" time="1.875" /><testcase classname="test_02_bridge" name="test_point_estimate_inside_bounds_is_not_enough" time="1.159" /><testcase classname="test_03_stability" name="test_fast_batch_limits_study" time="0.893" /><testcase classname="test_03_stability" name="test_noisy_weighted_bound_matches_scalar_reference" time="0.898" /><testcase classname="test_03_stability" name="test_incomplete_batch_blocks_overall_claim" time="0.944" /><testcase classname="test_03_stability" name="test_confidence_and_extrapolation_limits" time="2.714" /><testcase classname="test_03_stability" name="test_time_unit_equivalence" time="1.919" /><testcase classname="test_03_stability" name="test_initial_failure_reports_zero" time="1.054" /><testcase classname="test_04_rare_events" name="test_zero_blank_retains_uncertainty" time="0.956" /><testcase classname="test_04_rare_events" name="test_blank_correction_and_conservative_bounds" time="0.834" /><testcase classname="test_04_rare_events" name="test_missing_batch_blank_rejected" time="0.838" /><testcase classname="test_04_rare_events" name="test_high_level_failure_prevents_disconnected_loq" time="0.885" /><testcase classname="test_04_rare_events" name="test_level_requires_all_batches_and_replicates" time="0.832" /><testcase classname="test_04_rare_events" name="test_precision_failure_is_preserved" time="0.778" /><testcase classname="test_05_lineage" name="test_data_and_policy_changes_create_distinct_runs" time="3.363" /><testcase classname="test_05_lineage" name="test_reviews_stale_after_import_but_history_remains" time="2.206" /><testcase classname="test_05_lineage" name="test_review_optimistic_revision_and_campaign_scope" time="2.048" /><testcase classname="test_05_lineage" name="test_historical_export_uses_original_input_and_review" time="1.975" /><testcase classname="test_05_lineage" name="test_reimport_and_engine_identity" time="2.789" /><testcase classname="test_05_lineage" name="test_mutated_stored_input_blocks_export" time="1.477" /><testcase classname="test_06_workflows" name="test_analysis_survives_storage_review_and_report[screening]" time="2.992" /><testcase classname="test_06_workflows" name="test_analysis_survives_storage_review_and_report[bridge]" time="2.930" /><testcase classname="test_06_workflows" name="test_analysis_survives_storage_review_and_report[stability]" time="3.272" /><testcase classname="test_06_workflows" name="test_analysis_survives_storage_review_and_report[counts]" time="3.198" /><testcase classname="test_07_recovery" name="test_expired_stage_is_quarantined_and_old_worker_fenced" time="5.365" /><testcase classname="test_07_recovery" name="test_simultaneous_claims_have_one_winner" time="0.976" /><testcase classname="test_07_recovery" name="test_job_pins_revision_and_policy_through_historical_export" time="3.363" /><testcase classname="test_07_recovery" name="test_heartbeat_and_synchronous_result_reuse" time="3.426" /><testcase classname="test_07_recovery" name="test_publication_rolls_back_if_attempt_transition_is_interrupted" time="1.979" /><testcase classname="test_07_recovery" name="test_invalid_lease_does_not_create_attempt[0]" time="0.743" /><testcase classname="test_07_recovery" name="test_invalid_lease_does_not_create_attempt[3601]" time="0.813" /><testcase classname="test_07_recovery" name="test_invalid_lease_does_not_create_attempt[inf]" time="0.816" /><testcase classname="test_07_recovery" name="test_staged_fingerprint_tampering_blocks_publication" time="1.858" /><testcase classname="test_07_recovery" name="test_migration_preserves_existing_analysis_and_review" time="1.632" /><testcase classname="test_07_recovery" name="test_conflicting_synchronous_run_prevents_publication[running]" time="2.743" /><testcase classname="test_07_recovery" name="test_conflicting_synchronous_run_prevents_publication[different]" time="2.686" /><testcase classname="test_07_recovery" name="test_corrupt_pinned_job_cannot_compute[engine-unavailable]" time="0.974" /><testcase classname="test_07_recovery" name="test_corrupt_pinned_job_cannot_compute[policy_sha-wrong]" time="0.988" /><testcase classname="test_08_identity" name="test_equal_identity_pools_aliases_and_keeps_plate_telemetry_local" time="2.147" /><testcase classname="test_08_identity" name="test_distinct_constructs_and_targets_do_not_pool" time="1.055" /><testcase classname="test_08_identity" name="test_smiles_case_is_identity_significant" time="0.933" /><testcase classname="test_08_identity" name="test_long_and_delimiter_like_identifiers_remain_distinct" time="0.934" /><testcase classname="test_08_identity" name="test_identity_conflicts_are_atomic_import_failures[nested]" time="0.358" /><testcase classname="test_08_identity" name="test_identity_conflicts_are_atomic_import_failures[global]" time="0.352" /><testcase classname="test_08_identity" name="test_identity_conflicts_are_atomic_import_failures[undefined]" time="0.345" /><testcase classname="test_08_identity" name="test_identity_conflicts_are_atomic_import_failures[duplicate]" time="0.401" /><testcase classname="test_08_identity" name="test_original_envelope_and_identity_map_survive_export" time="2.144" /><testcase classname="test_09_contract_edges" name="test_analysis_failure_leaves_no_stage_or_run" time="1.860" /><testcase classname="test_09_contract_edges" name="test_completed_job_rejects_wrong_token" time="2.242" /><testcase classname="test_09_contract_edges" name="test_invalid_campaign_envelopes_are_rejected[duplicate_entity]" time="0.229" /><testcase classname="test_09_contract_edges" name="test_invalid_campaign_envelopes_are_rejected[records]" time="0.244" /><testcase classname="test_09_contract_edges" name="test_invalid_campaign_envelopes_are_rejected[telemetry]" time="0.233" /><testcase classname="test_09_contract_edges" name="test_invalid_campaign_envelopes_are_rejected[alphabet]" time="0.183" /><testcase classname="test_09_contract_edges" name="test_sequence_unknown_stop_symbols_and_legacy_names" time="2.249" /><testcase classname="test_10_ground_truth" name="test_bridge_interval_matches_scalar_resampling[13-0.8]" time="1.683" /><testcase classname="test_10_ground_truth" name="test_bridge_interval_matches_scalar_resampling[701-0.97]" time="1.114" /><testcase classname="test_10_ground_truth" name="test_count_endpoints_match_binomial_tail_inversion[0]" time="0.999" /><testcase classname="test_10_ground_truth" name="test_count_endpoints_match_binomial_tail_inversion[3]" time="0.996" /><testcase classname="test_10_ground_truth" name="test_count_endpoints_match_binomial_tail_inversion[20]" time="0.943" /><testcase classname="test_10_ground_truth" name="test_every_reported_stability_bound_matches_scalar_formula" time="0.947" /><testcase classname="test_10_ground_truth" name="test_screening_recovers_varied_known_curves[0.12-0.85]" time="0.894" /><testcase classname="test_10_ground_truth" name="test_screening_recovers_varied_known_curves[2.4-1.7]" time="0.937" /><testcase classname="test_10_ground_truth" name="test_screening_recovers_varied_known_curves[4.8-1.05]" time="0.939" /><testcase classname="test_10_ground_truth" name="test_blank_and_nonblank_cannot_share_conflicting_level[False]" time="0.880" /><testcase classname="test_10_ground_truth" name="test_blank_and_nonblank_cannot_share_conflicting_level[True]" time="0.839" /><testcase classname="test_11_ingestion" name="test_resume_rejected_attempt_and_incomplete_preview" time="3.043" /><testcase classname="test_11_ingestion" name="test_corrections_arrival_order_and_exact_source_export" time="5.088" /><testcase classname="test_11_ingestion" name="test_publication_fault_is_atomic_and_retryable" time="1.410" /><testcase classname="test_11_ingestion" name="test_competing_deliveries_have_one_publication" time="3.549" /><testcase classname="test_11_ingestion" name="test_publish_uses_bound_original_evidence[bytes]" time="1.593" /><testcase classname="test_11_ingestion" name="test_publish_uses_bound_original_evidence[cache]" time="1.513" /><testcase classname="test_11_ingestion" name="test_publish_uses_bound_original_evidence[manifest]" time="1.029" /><testcase classname="test_11_ingestion" name="test_duplicate_and_conflicting_reading_revisions" time="2.653" /><testcase classname="test_11_ingestion" name="test_bad_source_is_durable_rejection_not_partial_import[id,id\nx,x\n]" time="1.247" /><testcase classname="test_11_ingestion" name="test_bad_source_is_durable_rejection_not_partial_import[\xff]" time="1.127" /><testcase classname="test_11_ingestion" name="test_bad_source_is_durable_rejection_not_partial_import[id,plate,well,revision,assay,role,signal,compound,dose,dose_unit\nx,p,w,1,primary,sample,nan,c,1,uM\n]" time="1.070" /><testcase classname="test_11_ingestion" name="test_cancelled_session_keeps_evidence_and_rejects_work" time="2.099" /><testcase classname="test_11_ingestion" name="test_published_delivery_flows_through_leased_job" time="2.443" /><testcase classname="test_11_ingestion" name="test_schema_upgrade_preserves_existing_jobs_and_reviews" time="1.716" /><testcase classname="test_11_ingestion" name="test_fields_that_should_be_empty_are_rejected[readings-row0]" time="0.572" /><testcase classname="test_11_ingestion" name="test_fields_that_should_be_empty_are_rejected[telemetry-row1]" time="0.574" /><testcase classname="test_11_ingestion" name="test_quoted_multiline_csv_reports_physical_line_and_accepts_reordered_columns" time="1.373" /><testcase classname="test_11_ingestion" name="test_conflicting_superseded_revision_and_telemetry_are_errors" time="2.705" /><testcase classname="test_11_ingestion" name="test_large_revision_identity_is_not_rounded_through_float" time="1.121" /><testcase classname="test_12_uncertainty" name="test_common_shift_has_exact_sensitivity_and_changes_review" time="0.882" /><testcase classname="test_12_uncertainty" name="test_independent_well_errors_are_not_a_shared_stock" time="0.883" /><testcase classname="test_12_uncertainty" name="test_shared_source_adds_across_ancestry_before_squaring" time="2.609" /><testcase classname="test_12_uncertainty" name="test_zero_error_confidence_and_legacy_fit" time="3.895" /><testcase classname="test_12_uncertainty" name="test_invalid_calibration_is_never_silently_ignored[cycle]" time="0.175" /><testcase classname="test_12_uncertainty" name="test_invalid_calibration_is_never_silently_ignored[missing_parent]" time="0.174" /><testcase classname="test_12_uncertainty" name="test_invalid_calibration_is_never_silently_ignored[unknown_source]" time="0.179" /><testcase classname="test_12_uncertainty" name="test_invalid_calibration_is_never_silently_ignored[negative_ratio]" time="0.175" /><testcase classname="test_12_uncertainty" name="test_invalid_calibration_is_never_silently_ignored[duplicate_node]" time="0.175" /><testcase classname="test_12_uncertainty" name="test_invalid_calibration_is_never_silently_ignored[duplicate_binding]" time="0.172" /><testcase classname="test_12_uncertainty" name="test_invalid_calibration_is_never_silently_ignored[unknown_record]" time="0.177" /><testcase classname="test_12_uncertainty" name="test_invalid_calibration_is_never_silently_ignored[control_binding]" time="0.179" /><testcase classname="test_12_uncertainty" name="test_invalid_calibration_is_never_silently_ignored[disagree]" time="0.835" /><testcase classname="test_12_uncertainty" name="test_invalid_calibration_is_never_silently_ignored[negative_sd]" time="0.174" /><testcase classname="test_12_uncertainty" name="test_invalid_calibration_is_never_silently_ignored[nested]" time="0.184" /><testcase classname="test_12_uncertainty" name="test_invalid_calibration_is_never_silently_ignored[wrong_kind]" time="0.180" /><testcase classname="test_12_uncertainty" name="test_missing_binding_is_unresolved_but_failed_well_stays_excluded" time="1.924" /><testcase classname="test_12_uncertainty" name="test_campaign_scoping_preserves_shared_sources" time="1.282" /><testcase classname="test_12_uncertainty" name="test_changed_calibration_is_pinned_through_jobs_and_reports" time="3.862" /><testcase classname="test_12_uncertainty" name="test_nonuniform_sensitivity_matches_small_refit_perturbation" time="3.219" /><testcase classname="test_12_uncertainty" name="test_extreme_finite_uncertainty_and_confidence_are_json_safe" time="2.046" /><testcase classname="test_12_uncertainty" name="test_nominal_replacement_empty_sources_and_unused_graph_validation" time="1.268" /><testcase classname="test_13_transfers" name="test_generated_histories_match_exact_rational_ledger[17]" time="0.231" /><testcase classname="test_13_transfers" name="test_generated_histories_match_exact_rational_ledger[41]" time="0.176" /><testcase classname="test_13_transfers" name="test_generated_histories_match_exact_rational_ledger[113]" time="0.178" /><testcase classname="test_13_transfers" name="test_generated_histories_match_exact_rational_ledger[307]" time="0.175" /><testcase classname="test_13_transfers" name="test_generated_histories_match_exact_rational_ledger[701]" time="0.228" /><testcase classname="test_13_transfers" name="test_binding_time_and_transitive_correction" time="0.347" /><testcase classname="test_13_transfers" name="test_duplicate_export_is_not_an_additional_physical_transfer" time="0.578" /><testcase classname="test_13_transfers" name="test_failed_topup_does_not_undo_delivered_liquid[failed]" time="0.179" /><testcase classname="test_13_transfers" name="test_failed_topup_does_not_undo_delivered_liquid[cancelled]" time="0.175" /><testcase classname="test_13_transfers" name="test_unknown_contents_propagate_only_along_delivered_paths_and_can_be_corrected" time="1.614" /><testcase classname="test_13_transfers" name="test_unit_changes_and_temporal_return_transfers" time="0.399" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[obsolete_conflict]" time="0.914" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[change_identity]" time="0.920" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[duplicate_sequence]" time="0.908" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[unknown_vessel]" time="1.010" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[overdraw]" time="0.861" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[boolean_sequence]" time="0.853" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[float_revision]" time="0.798" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[negative_volume]" time="0.967" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[unknown_with_volume]" time="1.072" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[zero_success]" time="0.847" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[nonzero_failure]" time="0.752" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[duplicate_binding]" time="0.749" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[control_binding]" time="0.742" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[duplicate_vessel]" time="0.747" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[binding_future]" time="0.854" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[overflow]" time="0.797" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[empty_solute]" time="0.932" /><testcase classname="test_13_transfers" name="test_invalid_history_rejected_before_storage[nonlist_events]" time="0.852" /><testcase classname="test_13_transfers" name="test_reconstructed_doses_reach_fits_and_plate_modes" time="2.095" /><testcase classname="test_13_transfers" name="test_legacy_plates_and_uncertainty_cannot_override_contents" time="3.877" /><testcase classname="test_13_transfers" name="test_campaign_local_histories_survive_canonical_identity" time="1.227" /><testcase classname="test_13_transfers" name="test_pinned_jobs_current_reviews_and_historical_report" time="4.186" /><testcase classname="test_13_transfers" name="test_instrument_history_bytes_publish_atomically_and_ignore_parsed_cache" time="3.440" /><testcase classname="test_13_transfers" name="test_aliases_of_one_solute_add_without_losing_mass" time="0.228" /><testcase classname="test_13_transfers" name="test_large_operation_ordinals_do_not_round_through_float" time="0.174" /><testcase classname="test_14_corrections" name="test_equal_doses_do_not_reuse_changed_evidence_or_review[20-15]" time="3.561" /><testcase classname="test_14_corrections" name="test_equal_doses_do_not_reuse_changed_evidence_or_review[26-18]" time="3.976" /><testcase classname="test_14_corrections" name="test_queued_compute_keeps_the_original_equal_dose_history" time="1.236" /><testcase classname="test_14_corrections" name="test_delayed_publication_reuses_pinned_run_without_displacing_current_review" time="2.069" /><testcase classname="test_14_corrections" name="test_historical_exports_retain_the_complete_previous_result" time="0.567" /><testcase classname="test_14_corrections" name="test_a_precomputed_job_stays_publishable_after_an_equal_dose_correction" time="4.366" /><testcase classname="test_14_corrections" name="test_source_acceptance_and_complete_delivery_identity_are_distinct" time="3.315" /><testcase classname="test_14_corrections" name="test_unknown_evidence_and_resolved_overdraw_follow_different_paths" time="4.354" /><testcase classname="test_15_recovery_migration" name="test_scheduler_submission_identity_includes_the_dataset" time="1.152" /><testcase classname="test_15_recovery_migration" name="test_equal_dose_records_are_not_aggregated_in_evidence_exports" time="1.825" /><testcase classname="test_15_recovery_migration" name="test_dry_run_identifies_recoverable_blocked_and_healthy_without_writes" time="0.329"><failure message="AssertionError: assert set() == {('18171003a3... 'preserved')}&#10;  &#10;  Extra items in the right set:&#10;  ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')&#10;  Use -v to get more diff">client = &lt;conftest.Client object at 0xffffae077890&gt;
+
+    def test_dry_run_identifies_recoverable_blocked_and_healthy_without_writes(client):
+        setup(client);before=Path(client.db).read_bytes()
+        result=command(client,dry=True)
+        assert result['mode']=='dry_run' and result['backup'] is None
+&gt;       check_plan(result)
+
+test_15_recovery_migration.py:147: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+report = {'backup': None, 'mode': 'dry_run', 'studies': [{'campaign': '09ac813ba8cb4ac7bb990b8f4f0c4f82', 'decisions': [], 'job...d7e0bf6eb4bdc9f48ba3dbd775157', 'decisions': [], 'jobs': [], 'runs': [], ...}, ...], 'version': 'transfer-evidence-v1'}
+applied = False
+
+    def check_plan(report,applied=False):
+        by=entries(report)
+        for case in ORACLE['cases']:
+            e=by[case['campaign']]
+            blocked=case['blocked'] and not (case['kind']=='later_direct' and e['status'] in {'recoverable','recovered'})
+            expected='blocked' if blocked else ('recovered' if applied else 'recoverable') if case['sessions'] else 'unaffected'
+            assert e['status']==expected,(case['campaign'],case['kind'],e)
+            assert {s['session'] for s in e['sessions']}==(set(case['sessions']) if not blocked else set())
+            assert {j['job'] for j in e['jobs']}==({j['job'] for j in case['repin']} if not blocked else set())
+            if not blocked:
+                session_map={s['session']:s['to_dataset'] for s in e['sessions']}
+                job_map={j['job']:j['to_dataset'] for j in e['jobs']}
+                for intended in case['repin']:assert job_map[intended['job']]==session_map[intended['session']]
+            assert bool(e['unresolved'])==blocked
+            expected_runs=[r for r in ORACLE['original']['runs'] if r['campaign']==case['campaign']]
+            expected_decisions=[d for d in ORACLE['original']['decisions'] if d['campaign']==case['campaign']]
+&gt;           assert {(r['run'],r['dataset'],r['action']) for r in e['runs']}=={(r['id'],r['dataset'],'preserved') for r in expected_runs}
+E           AssertionError: assert set() == {('18171003a3... 'preserved')}
+E             
+E             Extra items in the right set:
+E             ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')
+E             Use -v to get more diff
+
+test_15_recovery_migration.py:65: AssertionError</failure></testcase><testcase classname="test_15_recovery_migration" name="test_apply_recovers_ordered_revisions_and_preserves_original_work" time="0.657"><failure message="AssertionError: assert set() == {('18171003a3... 'preserved')}&#10;  &#10;  Extra items in the right set:&#10;  ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')&#10;  Use -v to get more diff">client = &lt;conftest.Client object at 0xffffad98b050&gt;
+
+    def test_apply_recovers_ordered_revisions_and_preserves_original_work(client):
+        setup(client);before=state(client.db);planned=command(client,dry=True)
+        backup=client.directory/'pre-recovery.db';applied=command(client,backup=backup)
+&gt;       assert_apply(client,before,applied)
+
+test_15_recovery_migration.py:154: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test_15_recovery_migration.py:71: in assert_apply
+    by=check_plan(report,True);after=state(client.db)
+       ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+report = {'backup': '/tmp/truegate-check-vlxm6u4p/pre-recovery.db', 'mode': 'apply', 'studies': [{'campaign': '09ac813ba8cb4ac7...d7e0bf6eb4bdc9f48ba3dbd775157', 'decisions': [], 'jobs': [], 'runs': [], ...}, ...], 'version': 'transfer-evidence-v1'}
+applied = True
+
+    def check_plan(report,applied=False):
+        by=entries(report)
+        for case in ORACLE['cases']:
+            e=by[case['campaign']]
+            blocked=case['blocked'] and not (case['kind']=='later_direct' and e['status'] in {'recoverable','recovered'})
+            expected='blocked' if blocked else ('recovered' if applied else 'recoverable') if case['sessions'] else 'unaffected'
+            assert e['status']==expected,(case['campaign'],case['kind'],e)
+            assert {s['session'] for s in e['sessions']}==(set(case['sessions']) if not blocked else set())
+            assert {j['job'] for j in e['jobs']}==({j['job'] for j in case['repin']} if not blocked else set())
+            if not blocked:
+                session_map={s['session']:s['to_dataset'] for s in e['sessions']}
+                job_map={j['job']:j['to_dataset'] for j in e['jobs']}
+                for intended in case['repin']:assert job_map[intended['job']]==session_map[intended['session']]
+            assert bool(e['unresolved'])==blocked
+            expected_runs=[r for r in ORACLE['original']['runs'] if r['campaign']==case['campaign']]
+            expected_decisions=[d for d in ORACLE['original']['decisions'] if d['campaign']==case['campaign']]
+&gt;           assert {(r['run'],r['dataset'],r['action']) for r in e['runs']}=={(r['id'],r['dataset'],'preserved') for r in expected_runs}
+E           AssertionError: assert set() == {('18171003a3... 'preserved')}
+E             
+E             Extra items in the right set:
+E             ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')
+E             Use -v to get more diff
+
+test_15_recovery_migration.py:65: AssertionError</failure></testcase><testcase classname="test_15_recovery_migration" name="test_recovery_is_idempotent_and_reported_mappings_remain_consistent" time="0.327"><failure message="AssertionError: assert set() == {('18171003a3... 'preserved')}&#10;  &#10;  Extra items in the right set:&#10;  ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')&#10;  Use -v to get more diff">client = &lt;conftest.Client object at 0xffffad98b7d0&gt;
+
+    def test_recovery_is_idempotent_and_reported_mappings_remain_consistent(client):
+        setup(client);first=command(client,backup=client.directory/'first-backup.db')
+&gt;       check_plan(first,True);before=state(client.db)
+        ^^^^^^^^^^^^^^^^^^^^^^
+
+test_15_recovery_migration.py:166: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+report = {'backup': '/tmp/truegate-check-33wlxnox/first-backup.db', 'mode': 'apply', 'studies': [{'campaign': '09ac813ba8cb4ac7...d7e0bf6eb4bdc9f48ba3dbd775157', 'decisions': [], 'jobs': [], 'runs': [], ...}, ...], 'version': 'transfer-evidence-v1'}
+applied = True
+
+    def check_plan(report,applied=False):
+        by=entries(report)
+        for case in ORACLE['cases']:
+            e=by[case['campaign']]
+            blocked=case['blocked'] and not (case['kind']=='later_direct' and e['status'] in {'recoverable','recovered'})
+            expected='blocked' if blocked else ('recovered' if applied else 'recoverable') if case['sessions'] else 'unaffected'
+            assert e['status']==expected,(case['campaign'],case['kind'],e)
+            assert {s['session'] for s in e['sessions']}==(set(case['sessions']) if not blocked else set())
+            assert {j['job'] for j in e['jobs']}==({j['job'] for j in case['repin']} if not blocked else set())
+            if not blocked:
+                session_map={s['session']:s['to_dataset'] for s in e['sessions']}
+                job_map={j['job']:j['to_dataset'] for j in e['jobs']}
+                for intended in case['repin']:assert job_map[intended['job']]==session_map[intended['session']]
+            assert bool(e['unresolved'])==blocked
+            expected_runs=[r for r in ORACLE['original']['runs'] if r['campaign']==case['campaign']]
+            expected_decisions=[d for d in ORACLE['original']['decisions'] if d['campaign']==case['campaign']]
+&gt;           assert {(r['run'],r['dataset'],r['action']) for r in e['runs']}=={(r['id'],r['dataset'],'preserved') for r in expected_runs}
+E           AssertionError: assert set() == {('18171003a3... 'preserved')}
+E             
+E             Extra items in the right set:
+E             ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')
+E             Use -v to get more diff
+
+test_15_recovery_migration.py:65: AssertionError</failure></testcase><testcase classname="test_15_recovery_migration" name="test_cached_parses_and_row_enumeration_order_are_not_recovery_evidence" time="0.336"><failure message="AssertionError: assert set() == {('18171003a3... 'preserved')}&#10;  &#10;  Extra items in the right set:&#10;  ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')&#10;  Use -v to get more diff">client = &lt;conftest.Client object at 0xffffad98bc50&gt;
+
+    def test_cached_parses_and_row_enumeration_order_are_not_recovery_evidence(client):
+        setup(client)
+        client.sql("UPDATE ingest_sources SET parsed='[]'")
+        client.sql("UPDATE events SET created='unreliable-time'")
+        before=state(client.db)
+        result=command(client,backup=client.directory/'backup.db')
+&gt;       assert_apply(client,before,result)
+
+test_15_recovery_migration.py:185: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test_15_recovery_migration.py:71: in assert_apply
+    by=check_plan(report,True);after=state(client.db)
+       ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+report = {'backup': '/tmp/truegate-check-zntbrc1w/backup.db', 'mode': 'apply', 'studies': [{'campaign': '09ac813ba8cb4ac7bb990b...d7e0bf6eb4bdc9f48ba3dbd775157', 'decisions': [], 'jobs': [], 'runs': [], ...}, ...], 'version': 'transfer-evidence-v1'}
+applied = True
+
+    def check_plan(report,applied=False):
+        by=entries(report)
+        for case in ORACLE['cases']:
+            e=by[case['campaign']]
+            blocked=case['blocked'] and not (case['kind']=='later_direct' and e['status'] in {'recoverable','recovered'})
+            expected='blocked' if blocked else ('recovered' if applied else 'recoverable') if case['sessions'] else 'unaffected'
+            assert e['status']==expected,(case['campaign'],case['kind'],e)
+            assert {s['session'] for s in e['sessions']}==(set(case['sessions']) if not blocked else set())
+            assert {j['job'] for j in e['jobs']}==({j['job'] for j in case['repin']} if not blocked else set())
+            if not blocked:
+                session_map={s['session']:s['to_dataset'] for s in e['sessions']}
+                job_map={j['job']:j['to_dataset'] for j in e['jobs']}
+                for intended in case['repin']:assert job_map[intended['job']]==session_map[intended['session']]
+            assert bool(e['unresolved'])==blocked
+            expected_runs=[r for r in ORACLE['original']['runs'] if r['campaign']==case['campaign']]
+            expected_decisions=[d for d in ORACLE['original']['decisions'] if d['campaign']==case['campaign']]
+&gt;           assert {(r['run'],r['dataset'],r['action']) for r in e['runs']}=={(r['id'],r['dataset'],'preserved') for r in expected_runs}
+E           AssertionError: assert set() == {('18171003a3... 'preserved')}
+E             
+E             Extra items in the right set:
+E             ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')
+E             Use -v to get more diff
+
+test_15_recovery_migration.py:65: AssertionError</failure></testcase><testcase classname="test_15_recovery_migration" name="test_apply_refuses_missing_or_existing_backup_without_mutation" time="0.465" /><testcase classname="test_15_recovery_migration" name="test_recovery_interruption_rolls_back_all_changes_and_retains_backup" time="0.676"><failure message="AssertionError: assert set() == {('18171003a3... 'preserved')}&#10;  &#10;  Extra items in the right set:&#10;  ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')&#10;  Use -v to get more diff">client = &lt;conftest.Client object at 0xffffbb837110&gt;
+
+    def test_recovery_interruption_rolls_back_all_changes_and_retains_backup(client):
+        setup(client)
+        client.sql("CREATE TRIGGER recovery_stop BEFORE INSERT ON datasets BEGIN SELECT RAISE(ABORT,'controlled recovery interruption'); END")
+        before=state(client.db);backup=client.directory/'backup.db'
+        command(client,backup=backup,ok=False)
+        assert backup.is_file() and state(client.db)==before
+        assert state(backup)==before
+        client.sql('DROP TRIGGER recovery_stop')
+&gt;       assert_apply(client,before,command(client,backup=client.directory/'retry-backup.db'))
+
+test_15_recovery_migration.py:204: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test_15_recovery_migration.py:71: in assert_apply
+    by=check_plan(report,True);after=state(client.db)
+       ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+report = {'backup': '/tmp/truegate-check-kfult481/retry-backup.db', 'mode': 'apply', 'studies': [{'campaign': '09ac813ba8cb4ac7...d7e0bf6eb4bdc9f48ba3dbd775157', 'decisions': [], 'jobs': [], 'runs': [], ...}, ...], 'version': 'transfer-evidence-v1'}
+applied = True
+
+    def check_plan(report,applied=False):
+        by=entries(report)
+        for case in ORACLE['cases']:
+            e=by[case['campaign']]
+            blocked=case['blocked'] and not (case['kind']=='later_direct' and e['status'] in {'recoverable','recovered'})
+            expected='blocked' if blocked else ('recovered' if applied else 'recoverable') if case['sessions'] else 'unaffected'
+            assert e['status']==expected,(case['campaign'],case['kind'],e)
+            assert {s['session'] for s in e['sessions']}==(set(case['sessions']) if not blocked else set())
+            assert {j['job'] for j in e['jobs']}==({j['job'] for j in case['repin']} if not blocked else set())
+            if not blocked:
+                session_map={s['session']:s['to_dataset'] for s in e['sessions']}
+                job_map={j['job']:j['to_dataset'] for j in e['jobs']}
+                for intended in case['repin']:assert job_map[intended['job']]==session_map[intended['session']]
+            assert bool(e['unresolved'])==blocked
+            expected_runs=[r for r in ORACLE['original']['runs'] if r['campaign']==case['campaign']]
+            expected_decisions=[d for d in ORACLE['original']['decisions'] if d['campaign']==case['campaign']]
+&gt;           assert {(r['run'],r['dataset'],r['action']) for r in e['runs']}=={(r['id'],r['dataset'],'preserved') for r in expected_runs}
+E           AssertionError: assert set() == {('18171003a3... 'preserved')}
+E             
+E             Extra items in the right set:
+E             ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')
+E             Use -v to get more diff
+
+test_15_recovery_migration.py:65: AssertionError</failure></testcase><testcase classname="test_15_recovery_migration" name="test_recovered_queued_jobs_use_their_own_publication_epoch" time="0.329"><failure message="AssertionError: assert set() == {('18171003a3... 'preserved')}&#10;  &#10;  Extra items in the right set:&#10;  ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')&#10;  Use -v to get more diff">client = &lt;conftest.Client object at 0xffffad98a630&gt;
+
+    def test_recovered_queued_jobs_use_their_own_publication_epoch(client):
+&gt;       setup(client);report=command(client,backup=client.directory/'backup.db');check_plan(report,True)
+                                                                                 ^^^^^^^^^^^^^^^^^^^^^^^
+
+test_15_recovery_migration.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+report = {'backup': '/tmp/truegate-check-tfzsx7nr/backup.db', 'mode': 'apply', 'studies': [{'campaign': '09ac813ba8cb4ac7bb990b...d7e0bf6eb4bdc9f48ba3dbd775157', 'decisions': [], 'jobs': [], 'runs': [], ...}, ...], 'version': 'transfer-evidence-v1'}
+applied = True
+
+    def check_plan(report,applied=False):
+        by=entries(report)
+        for case in ORACLE['cases']:
+            e=by[case['campaign']]
+            blocked=case['blocked'] and not (case['kind']=='later_direct' and e['status'] in {'recoverable','recovered'})
+            expected='blocked' if blocked else ('recovered' if applied else 'recoverable') if case['sessions'] else 'unaffected'
+            assert e['status']==expected,(case['campaign'],case['kind'],e)
+            assert {s['session'] for s in e['sessions']}==(set(case['sessions']) if not blocked else set())
+            assert {j['job'] for j in e['jobs']}==({j['job'] for j in case['repin']} if not blocked else set())
+            if not blocked:
+                session_map={s['session']:s['to_dataset'] for s in e['sessions']}
+                job_map={j['job']:j['to_dataset'] for j in e['jobs']}
+                for intended in case['repin']:assert job_map[intended['job']]==session_map[intended['session']]
+            assert bool(e['unresolved'])==blocked
+            expected_runs=[r for r in ORACLE['original']['runs'] if r['campaign']==case['campaign']]
+            expected_decisions=[d for d in ORACLE['original']['decisions'] if d['campaign']==case['campaign']]
+&gt;           assert {(r['run'],r['dataset'],r['action']) for r in e['runs']}=={(r['id'],r['dataset'],'preserved') for r in expected_runs}
+E           AssertionError: assert set() == {('18171003a3... 'preserved')}
+E             
+E             Extra items in the right set:
+E             ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')
+E             Use -v to get more diff
+
+test_15_recovery_migration.py:65: AssertionError</failure></testcase><testcase classname="test_16_recovery_evolution" name="test_recovery_history_semantics[legacy]" time="0.794" /><testcase classname="test_16_recovery_evolution" name="test_recovery_history_semantics[partial]" time="0.694" /><testcase classname="test_16_recovery_evolution" name="test_recovery_history_semantics[mixed]" time="0.688" /><testcase classname="test_16_recovery_evolution" name="test_recovery_history_semantics[unknown_codec]" time="0.395" /><testcase classname="test_16_recovery_evolution" name="test_repeat_adopts_partial_progress_without_new_changes" time="0.679" /><testcase classname="test_16_recovery_evolution" name="test_evolution_preserves_all_preexisting_evidence_and_worker_state" time="0.356" /><testcase classname="test_16_recovery_evolution" name="test_evolution_dry_run_backup_and_plan_consistency" time="0.735" /><testcase classname="test_16_recovery_evolution" name="test_mixed_history_refresh_analyze_review_and_subsequent_import" time="5.838" /></testsuite></testsuites>

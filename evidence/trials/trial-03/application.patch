@@ -1,0 +1,491 @@
+diff --git a/src/truegate/ingest_resolution.py b/src/truegate/ingest_resolution.py
+index 524eadd..e460e71 100644
+--- a/src/truegate/ingest_resolution.py
++++ b/src/truegate/ingest_resolution.py	
+@@ -9,18 +9,20 @@ from .errors import WorkbenchError, Conflict
+ 
+ def assemble(manifest, sources):
+     by_id = {s['source_id']:s for s in sources}
+-    pending = [s['id'] for s in manifest['sources'] if by_id[s['id']]['state'] != 'accepted']
++    pending = [s['id'] for s in manifest['sources'] if s['id'] not in by_id or by_id[s['id']]['state'] != 'accepted']
+     if pending:
+         raise Conflict('Sources not accepted: ' + ', '.join(sorted(pending)))
+     wells, transfers, original, history = {}, {}, [], None
+     for spec in sorted(manifest['sources'], key=lambda s:s['id']):
+         saved = by_id[spec['id']]
+-        raw = bytes(saved['raw'])
+-        if hashlib.sha256(raw).hexdigest() != spec['sha256']:
++        if not isinstance(saved['raw'], bytes):
++            raise Conflict('Missing original source bytes: ' + spec['id'])
++        raw = saved['raw']
++        if hashlib.sha256(raw).hexdigest() != spec['sha256'] or saved['sha'] != spec['sha256']:
+             raise Conflict('Stored source fingerprint mismatch: ' + spec['id'])
+-        parsed, errors = parse(raw, spec['kind'])
++        parsed, errors = parse(raw, spec['kind'], spec.get('codec'))
+         if errors:
+-            raise Conflict('Stored source no longer parses: ' + spec['id'])
++            raise Conflict('Stored source no longer parses: ' + spec['id'] + ': ' + errors[0]['error'])
+         original.append({'id':spec['id'], 'kind':spec['kind'], 'sha256':spec['sha256'],
+                          'text':raw.decode('utf-8')})
+         if spec['kind'] == 'transfer_history':
+diff --git a/src/truegate/ingestion.py b/src/truegate/ingestion.py
+index 73b3575..1d5c4b0 100644
+--- a/src/truegate/ingestion.py
++++ b/src/truegate/ingestion.py	
+@@ -100,7 +100,7 @@ class Ingestion:
+             if sha != spec['sha256']:
+                 rows, errors = [], [{'line':0, 'error':'Source fingerprint differs from manifest'}]
+             else:
+-                rows, errors = parse(raw, spec['kind'])
++                rows, errors = parse(raw, spec['kind'], spec.get('codec'))
+             state = 'rejected' if errors else 'accepted'
+             db.execute('UPDATE ingest_sources SET state=?,raw=?,sha=?,parsed=?,diagnostics=? WHERE session=? AND source_id=?',
+                        (state, raw, sha, dumps(rows), dumps(errors), identifier, source_id))
+diff --git a/src/truegate/instrument_files.py b/src/truegate/instrument_files.py
+index ccf056d..84d9d9c 100644
+--- a/src/truegate/instrument_files.py
++++ b/src/truegate/instrument_files.py	
+@@ -34,7 +34,7 @@ def parse(raw, kind, codec=None):
+     if kind == 'transfer_history':
+         from .codec import loads
+         from copy import deepcopy
+-        from .transfer_history import replay
++        from .transfer_history import replay, ordinal
+         try:
+             model = loads(raw.decode('utf-8-sig'))
+             if codec not in (None, 'transfer-history/2', 'transfer-history/1'):
+@@ -42,10 +42,10 @@ def parse(raw, kind, codec=None):
+             if codec == 'transfer-history/1':
+                 model = deepcopy(model)
+                 for binding in model['bindings']:
+-                    binding['sequence'] -= 1
++                    binding['sequence'] = ordinal(binding['sequence'], 'legacy binding sequence') - 1
+             replay(model)
+             return [{'line':0, 'record':model}], []
+-        except (WorkbenchError, ValueError, UnicodeError, OverflowError) as exc:
++        except (WorkbenchError, ValueError, UnicodeError, OverflowError, KeyError, TypeError, AttributeError) as exc:
+             return [], [{'line':0, 'error':str(exc)}]
+     if kind not in HEADERS:
+         raise WorkbenchError('Source kind must be readings or telemetry')
+diff --git a/src/truegate/jobs.py b/src/truegate/jobs.py
+index bf48404..809e06a 100644
+--- a/src/truegate/jobs.py
++++ b/src/truegate/jobs.py	
+@@ -32,8 +32,8 @@ class Jobs:
+             dataset = latest_dataset(db, campaign)
+             settings = resolve(study["kind"], policy)
+             key = digest(settings)
+-            row = db.execute("SELECT id FROM jobs WHERE campaign=? AND policy_sha=? AND engine=?",
+-                             (campaign, key, ENGINE_VERSION)).fetchone()
++            row = db.execute("SELECT id FROM jobs WHERE campaign=? AND dataset=? AND policy_sha=? AND engine=?",
++                             (campaign, dataset["id"], key, ENGINE_VERSION)).fetchone()
+             if row:
+                 return {"job": row["id"], "reused": True}
+             identifier = uuid.uuid4().hex
+diff --git a/src/truegate/recovery.py b/src/truegate/recovery.py
+index d107879..4864e0d 100644
+--- a/src/truegate/recovery.py
++++ b/src/truegate/recovery.py	
+@@ -1,74 +1,283 @@
+-"""Recover suppressed delivery revisions from immutable bytes and publication order."""
+-import hashlib
++"""Reconcile retained deliveries without rewriting historical scientific evidence.
++
++Planning is read-only and study-local. Applying a plan holds one writer reservation
++through the independent SQLite backup and the atomic mutation of all admitted studies.
++"""
+ import os
+ from pathlib import Path
+ import sqlite3
++import uuid
++
+ from .codec import loads, dumps, digest
+ from .errors import WorkbenchError
+ from .ingest_resolution import assemble
++from .ingestion import manifest_contract
+ from .repository import event, now
+ 
+-VERSION='transfer-evidence-v1'
+-ACTION='transfer_evidence_recovered_v1'
++VERSION = 'transfer-evidence-v1'
++ACTION = 'transfer_evidence_recovered_v1'
++PREVIEW = 'transfer_evidence_recovered_preview'
++
++
++def rows(db, query, args=()):
++    return [dict(row) for row in db.execute(query, args)]
++
++
++def require(condition, reason):
++    if not condition:
++        raise WorkbenchError(reason)
++
++
++def study_plan(db, cid):
++    entry = dict(campaign=cid, status='unaffected', sessions=[], jobs=[],
++                 runs=[], decisions=[], unresolved=[])
++    journal = rows(db, 'SELECT * FROM events WHERE campaign=? ORDER BY id', (cid,))
++    for item in journal:
++        item['payload'] = loads(item['payload'])
++        require(isinstance(item['payload'], dict), 'Journal payload is not an object')
++    completed = [e for e in journal if e['action'] == ACTION]
++    if completed:
++        # Later ordinary imports remain authoritative in repository.latest_dataset.
++        # Keep the durable mappings, including their original from_dataset values.
++        saved = completed[-1]['payload']
++        require(saved.get('version', VERSION) == VERSION and saved.get('campaign') == cid,
++                'Invalid completed recovery record')
++        return dict(saved, status='already_recovered')
+ 
++    sessions = {s['id']: s for s in rows(db, "SELECT * FROM ingest_sessions WHERE campaign=? AND state='published'", (cid,))}
++    publications = [e for e in journal if e['action'] == 'ingest_published']
++    previews = [e for e in journal if e['action'] == PREVIEW]
++    if not sessions and not publications and not previews:
++        return entry
++    datasets = {d['id']: d for d in rows(db, 'SELECT * FROM datasets WHERE campaign=?', (cid,))}
++    jobs = {j['id']: j for j in rows(db, 'SELECT * FROM jobs WHERE campaign=?', (cid,))}
+ 
+-def rows(db,query,args=()):
+-    return [dict(row) for row in db.execute(query,args)]
++    def dataset(identifier):
++        require(identifier in datasets, 'Dataset reference is absent or belongs to another study: ' + str(identifier))
++        d = datasets[identifier]
++        require(digest(loads(d['content'])) == d['sha'], 'Stored dataset fingerprint mismatch: ' + identifier)
++        return d
++
++    # No row is accepted as provenance merely because its hash resembles a delivery.
++    imported = {}
++    for e in journal:
++        if e['action'] == 'imported':
++            p = e['payload']
++            d = dataset(p['dataset'])
++            require(p['revision'] == d['revision'] and p['sha256'] == d['sha'],
++                    'Import journal disagrees with dataset: ' + d['id'])
++            require(d['id'] not in imported, 'Duplicate import provenance: ' + d['id'])
++            imported[d['id']] = e['id']
++
++    publication_by_session = {}
++    contents = {}
++    for e in publications:
++        p = e['payload']
++        sid = p['session']
++        require(sid in sessions and sid not in publication_by_session,
++                'Missing or ambiguous publication session: ' + str(sid))
++        session = sessions[sid]
++        dataset(p['dataset'])
++        dataset(session['published_dataset'])
++        manifest = loads(session['manifest'])
++        require(digest(manifest) == session['manifest_sha'], 'Manifest fingerprint mismatch: ' + sid)
++        manifest_contract(manifest)
++        require(manifest['delivery_id'] == session['delivery_key'] and
++                manifest['expected_revision'] == session['expected_revision'],
++                'Manifest disagrees with session: ' + sid)
++        opened = [x for x in journal if x['action'] == 'ingest_opened' and x['payload'].get('session') == sid]
++        require(len(opened) == 1 and opened[0]['id'] < e['id'] and
++                opened[0]['payload'].get('manifest_sha256') == session['manifest_sha'],
++                'Missing or inconsistent opening provenance: ' + sid)
++        sources = rows(db, 'SELECT * FROM ingest_sources WHERE session=?', (sid,))
++        require({s['source_id'] for s in sources} == {s['id'] for s in manifest['sources']},
++                'Retained source set differs from manifest: ' + sid)
++        require(all(isinstance(s['raw'], bytes) for s in sources), 'Missing original source bytes: ' + sid)
++        contents[sid] = assemble(manifest, sources)
++        publication_by_session[sid] = e
++    require(set(publication_by_session) == set(sessions), 'Published session lacks a publication event')
++
++    adopted = {}
++    moved = {}
++    for e in previews:
++        p = e['payload']
++        require(p.get('version') == 'transfer-evidence-preview-0', 'Unsupported partial recovery ledger')
++        for mapping in p['sessions']:
++            sid = mapping['session']
++            require(sid in sessions and sid not in adopted, 'Ambiguous partial recovery session')
++            original = publication_by_session[sid]
++            d = dataset(mapping['to_dataset'])
++            require(original['id'] < e['id'] and mapping['from_dataset'] == original['payload']['dataset'] and
++                    mapping['sha256'] == d['sha'] == digest(contents[sid]),
++                    'Partial recovery evidence does not match retained delivery: ' + sid)
++            adopted[sid] = mapping
++        for mapping in p['jobs']:
++            jid = mapping['job']
++            require(jid in jobs and jid not in moved, 'Ambiguous partial recovery job')
++            dataset(mapping['from_dataset']); dataset(mapping['to_dataset'])
++            require(mapping['to_dataset'] in {m['to_dataset'] for m in adopted.values()},
++                    'Partial recovery job targets unverified evidence')
++            require(jobs[jid]['dataset'] == mapping['to_dataset'], 'Partial recovery job pointer mismatch: ' + jid)
++            moved[jid] = mapping
++
++    authorized = set(imported) | {m['to_dataset'] for m in adopted.values()}
++    require(set(datasets) <= authorized, 'Dataset has no verifiable import or recovery provenance')
++    revision = max((d['revision'] for d in datasets.values()), default=0)
++    targets = {}
++    additions = []
++    for e in publications:
++        sid = e['payload']['session']
++        session = sessions[sid]
++        source = e['payload']['dataset']
++        require(session['published_dataset'] in {source, adopted.get(sid, {}).get('to_dataset')},
++                'Publication pointer changed without recovery provenance: ' + sid)
++        content = contents[sid]
++        sha = digest(content)
++        linked = dataset(session['published_dataset'])
++        if sid in adopted:
++            target = dataset(adopted[sid]['to_dataset'])
++        elif linked['sha'] == sha:
++            target = linked
++        else:
++            matches = [d for d in datasets.values() if d['sha'] == sha]
++            require(len(matches) <= 1, 'Multiple matching revisions have ambiguous provenance: ' + sid)
++            if matches:
++                target = dataset(matches[0]['id'])
++            else:
++                revision += 1
++                # Stable proposed IDs make preview/apply comparable; preview reserves nothing.
++                identifier = 'recovered-' + digest({'campaign': cid, 'session': sid, 'sha256': sha})
++                require(not db.execute('SELECT 1 FROM datasets WHERE id=?', (identifier,)).fetchone(),
++                        'Proposed recovery identifier already exists')
++                target = dict(id=identifier, revision=revision, sha=sha)
++                additions.append(dict(target, content=content))
++        targets[sid] = target['id']
++        if session['published_dataset'] != target['id'] or sid in adopted:
++            entry['sessions'].append(dict(session=sid, from_dataset=session['published_dataset'],
++                                          to_dataset=target['id'], revision=target['revision'], sha256=sha))
++
++    # Replay both the historical storage pointer and the recovered scientific input.
++    # Timestamps and revision allocation order are deliberately not consulted.
++    current, original_current = None, None
++    submissions = {}
++    for e in journal:
++        p = e['payload']
++        if e['action'] == 'imported':
++            current = original_current = p['dataset']
++        elif e['action'] == 'ingest_published':
++            current = targets[p['session']]
++            original_current = p['dataset']
++        elif e['action'] == 'job_submitted':
++            jid = p['job']
++            require(jid in jobs and jid not in submissions and current is not None,
++                    'Missing or ambiguous job submission: ' + str(jid))
++            require(p['dataset'] == original_current, 'Submission disagrees with publication context: ' + jid)
++            submissions[jid] = (current, p['dataset'])
++
++    final_keys = set()
++    for jid, job in jobs.items():
++        dataset(job['dataset'])
++        target = job['dataset']
++        if job['state'] == 'queued' and job['staged'] is None and job['published_run'] is None:
++            require(jid in submissions, 'Queued job lacks unique submission provenance: ' + jid)
++            expected, original = submissions[jid]
++            if jid in moved:
++                require(moved[jid]['from_dataset'] == original, 'Partial recovery job origin mismatch: ' + jid)
++            else:
++                require(job['dataset'] == original, 'Queued job pointer has no recovery provenance: ' + jid)
++            target = expected
++            if target != job['dataset']:
++                entry['jobs'].append(dict(job=jid, from_dataset=job['dataset'], to_dataset=target))
++        key = (target, job['policy_sha'], job['engine'])
++        require(key not in final_keys, 'Recovery would collide with an existing job key: ' + jid)
++        final_keys.add(key)
++    if entry['sessions'] or entry['jobs'] or previews:
++        require(current is not None, 'Current evidence cannot be determined')
++        entry.update(status='recoverable', version=VERSION, current_dataset=current, _additions=additions)
++        entry['runs'] = [dict(run=r['id'], dataset=r['dataset'], action='preserved')
++                         for r in rows(db, 'SELECT id,dataset FROM runs WHERE campaign=? ORDER BY id', (cid,))]
++        entry['decisions'] = [dict(decision=d['id'], run=d['run'], action='preserved')
++                             for d in rows(db, 'SELECT id,run FROM decisions WHERE campaign=? ORDER BY id', (cid,))]
++    return entry
+ 
+ 
+ def plan(db):
+-    """Audit published dataset links before attempting retained-delivery recovery."""
+-    studies=[]
+-    for campaign in rows(db,'SELECT id FROM campaigns ORDER BY id'):
+-        cid=campaign['id']
+-        entry=dict(campaign=cid,status='unaffected',sessions=[],jobs=[],
+-                   runs=[dict(run=r['id'],dataset=r['dataset'],action='preserved') for r in rows(db,'SELECT id,dataset FROM runs WHERE campaign=? ORDER BY id',(cid,))],
+-                   decisions=[dict(decision=d['id'],run=d['run'],action='preserved') for d in rows(db,'SELECT id,run FROM decisions WHERE campaign=? ORDER BY id',(cid,))],unresolved=[])
++    studies = []
++    for campaign in rows(db, 'SELECT id FROM campaigns ORDER BY id'):
++        cid = campaign['id']
++        try:
++            entry = study_plan(db, cid)
++        except (WorkbenchError, ValueError, TypeError, KeyError, AttributeError, OverflowError) as exc:
++            # Evidence failures block a whole study, never a partially assembled plan.
++            entry = dict(campaign=cid, status='blocked', sessions=[], jobs=[], runs=[], decisions=[],
++                         unresolved=[dict(reason=str(exc))])
+         studies.append(entry)
+-        for session in rows(db,"SELECT * FROM ingest_sessions WHERE campaign=? AND state='published'",(cid,)):
+-            if not db.execute('SELECT id FROM datasets WHERE id=?',(session['published_dataset'],)).fetchone():
+-                entry['status']='blocked';entry['unresolved'].append(dict(reason='Published dataset link is absent'))
+     return studies
+ 
+ 
+-def public(studies,mode,backup=None):
+-    return dict(version=VERSION,mode=mode,backup=str(backup) if backup else None,
+-                studies=[{k:v for k,v in entry.items() if not k.startswith('_')} for entry in studies])
++def public(studies, mode, backup=None):
++    return dict(version=VERSION, mode=mode, backup=str(backup) if backup else None,
++                studies=[{k: v for k, v in entry.items() if not k.startswith('_')} for entry in studies])
+ 
+ 
+-def recover(path,dry_run=False,backup=None):
+-    path=Path(path).resolve()
+-    if not path.is_file():raise WorkbenchError('An existing database is required')
+-    db=sqlite3.connect('file:'+str(path)+'?mode='+('ro' if dry_run else 'rw'),uri=True,isolation_level=None,timeout=30)
+-    db.row_factory=sqlite3.Row
++def recover(path, dry_run=False, backup=None):
++    path = Path(path).resolve()
++    if not path.is_file():
++        raise WorkbenchError('An existing database is required')
++    if not dry_run:
++        if backup is None or not Path(backup).is_absolute():
++            raise WorkbenchError('Apply requires a new absolute backup destination')
++        if os.path.lexists(backup):
++            raise WorkbenchError('Choose a new backup destination')
++        backup = Path(backup).resolve()
++        if backup == path:
++            raise WorkbenchError('Backup must not alias the input')
++    db = sqlite3.connect(path.as_uri() + '?mode=' + ('ro' if dry_run else 'rw'),
++                         uri=True, isolation_level=None, timeout=30)
++    db.row_factory = sqlite3.Row
+     try:
+         db.execute('PRAGMA foreign_keys=ON')
+         db.execute('BEGIN' if dry_run else 'BEGIN IMMEDIATE')
+-        studies=plan(db)
++        studies = plan(db)
+         if dry_run:
+-            db.rollback();return public(studies,'dry_run')
+-        if backup is None:raise WorkbenchError('Apply requires a new backup destination')
+-        backup=Path(backup).resolve()
+-        if backup==path or backup.exists():raise WorkbenchError('Choose a new backup destination')
+-        backup.parent.mkdir(parents=True,exist_ok=True)
+-        fd=os.open(backup,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.close(fd)
+-        # A separate reader can snapshot while this connection holds the write reservation.
+-        reader=sqlite3.connect('file:'+str(path)+'?mode=ro',uri=True)
+-        destination=sqlite3.connect(str(backup))
+-        try:reader.backup(destination)
+-        finally:destination.close();reader.close()
++            db.rollback()
++            return public(studies, 'dry_run')
++        backup.parent.mkdir(parents=True, exist_ok=True)
++        fd = os.open(backup, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
++        os.close(fd)
++        # The writer reservation excludes commits while a separate reader snapshots.
++        reader = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)
++        destination = sqlite3.connect(str(backup))
++        try:
++            reader.backup(destination)
++        finally:
++            destination.close()
++            reader.close()
+         for entry in studies:
+-            if entry['status']!='recoverable':continue
+-            cid=entry['campaign']
++            if entry['status'] != 'recoverable':
++                continue
++            cid = entry['campaign']
++            for addition in entry['_additions']:
++                db.execute('INSERT INTO datasets VALUES (?,?,?,?,?,?)',
++                           (addition['id'], cid, addition['revision'], addition['sha'], dumps(addition['content']), now()))
+             for correction in entry['sessions']:
+-                content=entry['_contents'][correction['session']]
+-                db.execute('INSERT INTO datasets VALUES (?,?,?,?,?,?)',(correction['to_dataset'],cid,correction['revision'],correction['sha256'],dumps(content),now()))
+-                db.execute('UPDATE ingest_sessions SET published_dataset=? WHERE id=?',(correction['to_dataset'],correction['session']))
++                db.execute('UPDATE ingest_sessions SET published_dataset=? WHERE id=?',
++                           (correction['to_dataset'], correction['session']))
++            # Vacate unique keys first: even a safe final permutation may collide
++            # during sequential UPDATEs. Original policy hashes are restored below.
++            policies = {}
++            for job in entry['jobs']:
++                policies[job['job']] = db.execute('SELECT policy_sha FROM jobs WHERE id=?', (job['job'],)).fetchone()[0]
++                db.execute('UPDATE jobs SET policy_sha=? WHERE id=?', ('recovery-' + uuid.uuid4().hex, job['job']))
+             for job in entry['jobs']:
+-                db.execute("UPDATE jobs SET dataset=? WHERE id=? AND state='queued'",(job['to_dataset'],job['job']))
+-            entry['status']='recovered'
+-            event(db,cid,ACTION,{k:v for k,v in entry.items() if not k.startswith('_')})
+-        db.commit();return public(studies,'apply',backup)
++                db.execute("UPDATE jobs SET dataset=?,policy_sha=? WHERE id=? AND state='queued'",
++                           (job['to_dataset'], policies[job['job']], job['job']))
++            entry['status'] = 'recovered'
++            event(db, cid, ACTION, {k: v for k, v in entry.items() if not k.startswith('_')})
++        db.commit()
++        return public(studies, 'apply', backup)
+     except BaseException:
+-        db.rollback();raise
+-    finally:db.close()
++        db.rollback()
++        raise
++    finally:
++        db.close()
+diff --git a/src/truegate/reporting.py b/src/truegate/reporting.py
+index d2362e1..7125717 100644
+--- a/src/truegate/reporting.py
++++ b/src/truegate/reporting.py	
+@@ -96,8 +96,7 @@ def curve_svg(analysis):
+ def transfer_rows(analysis):
+     rows = [dict(campaign=h['campaign'], history_revision=h['revision'], **b)
+             for h in analysis['result'].get('transfer_history') or [] for b in h['bindings']]
+-    grouped = {(row['campaign'], row['compound'], row['dose_um']):row for row in rows}
+-    return list(grouped.values())
++    return rows
+ 
+ 
+ def render(snapshot):
+diff --git a/src/truegate/repository.py b/src/truegate/repository.py
+index ac8d1c2..85a1b5f 100644
+--- a/src/truegate/repository.py
++++ b/src/truegate/repository.py	
+@@ -26,7 +26,19 @@ def get_campaign(db, campaign):
+ 
+ 
+ def latest_dataset(db, campaign):
+-    row = db.execute("SELECT * FROM datasets WHERE campaign=? ORDER BY revision DESC LIMIT 1", (campaign,)).fetchone()
++    # Recovery can append older evidence after a newer publication. Journal order,
++    # not allocation order, determines which evidence is current.
++    row = None
++    for item in db.execute("SELECT action,payload FROM events WHERE campaign=? AND action IN ('imported','transfer_evidence_recovered_v1') ORDER BY id DESC", (campaign,)):
++        payload = loads(item["payload"])
++        identifier = payload.get("current_dataset") if item["action"] == "transfer_evidence_recovered_v1" else payload.get("dataset")
++        if identifier:
++            row = db.execute("SELECT * FROM datasets WHERE id=? AND campaign=?", (identifier, campaign)).fetchone()
++            if row is None:
++                raise Conflict("Current dataset journal reference is absent")
++            break
++    if row is None:
++        row = db.execute("SELECT * FROM datasets WHERE campaign=? ORDER BY revision DESC LIMIT 1", (campaign,)).fetchone()
+     if row is None:
+         raise WorkbenchError("Campaign has no dataset")
+     return row
+@@ -40,9 +52,9 @@ def store_dataset(db, campaign, data):
+     if study["kind"] != data["kind"]:
+         raise WorkbenchError("Dataset kind differs from campaign")
+     latest = db.execute("SELECT * FROM datasets WHERE campaign=? ORDER BY revision DESC LIMIT 1", (campaign,)).fetchone()
+-    from .dispensing import measurement_key
+-    if latest and (latest["sha"] == sha or measurement_key(loads(latest["content"])) == measurement_key(data)):
+-        return {"dataset": latest["id"], "revision": latest["revision"], "sha256": latest["sha"], "reused": True}
++    current = latest_dataset(db, campaign) if latest else None
++    if current and current["sha"] == sha:
++        return {"dataset": current["id"], "revision": current["revision"], "sha256": current["sha"], "reused": True}
+     revision = latest["revision"] + 1 if latest else 1
+     identifier = uuid.uuid4().hex
+     db.execute("INSERT INTO datasets VALUES (?,?,?,?,?,?)", (identifier, campaign, revision, sha, dumps(data), now()))
+@@ -111,7 +123,8 @@ class Repository:
+             result = db.execute("SELECT * FROM runs WHERE id=? AND campaign=?", (run, campaign)).fetchone()
+             if not result or result["status"] != "complete":
+                 raise WorkbenchError("A complete analysis from this campaign is required")
+-            if result["dataset"] != latest["id"] or expected_revision != latest["revision"]:
++            revision = db.execute("SELECT MAX(revision) FROM datasets WHERE campaign=?", (campaign,)).fetchone()[0]
++            if result["dataset"] != latest["id"] or expected_revision != revision:
+                 raise Conflict("Dataset changed; refresh the campaign and analyze its current revision")
+             cursor = db.execute("INSERT INTO decisions(campaign,run,action,reviewer,note,created) VALUES (?,?,?,?,?,?)",
+                                 (campaign, run, action, reviewer, note, now()))
+@@ -124,7 +137,8 @@ class Repository:
+             datasets = [dict(r) for r in db.execute("SELECT id,revision,sha,created FROM datasets WHERE campaign=? ORDER BY revision", (campaign,))]
+             runs = [dict(r) for r in db.execute("SELECT id,dataset,policy_sha,engine,status,error,created,finished FROM runs WHERE campaign=? ORDER BY created,id", (campaign,))]
+             decisions = [dict(r) for r in db.execute("SELECT * FROM decisions WHERE campaign=? ORDER BY id", (campaign,))]
+-            latest_id = datasets[-1]["id"] if datasets else None
++            current = latest_dataset(db, campaign) if datasets else None
++            latest_id = current["id"] if current else None
+             current_runs = {r["id"] for r in runs if r["dataset"] == latest_id and r["status"] == "complete"}
+             active = [d for d in decisions if d["run"] in current_runs]
+             study.update(datasets=datasets, runs=runs, decisions=decisions,

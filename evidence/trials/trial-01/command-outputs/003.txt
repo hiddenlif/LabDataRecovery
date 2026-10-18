@@ -1,0 +1,373 @@
+# Correction lifecycle
+
+A screening correction is new evidence even when all fitted concentrations and responses remain equal. Transfer volumes, selected operation revisions, lineage, uncertainty and exact original source evidence are part of the dataset identity. Importing a changed complete input creates a new immutable dataset revision. Repeating the exact latest input reuses its revision without retiring its current review. These rules apply to flat and campaign inputs and instrument publication.
+
+A new dataset has no current review until an analysis of that dataset is reviewed. Earlier decisions remain in history. Submitted jobs bind their dataset, policy and engine at submission. Computing or publishing after a correction must not substitute the newest evidence, including when its numerical measurement projection is identical. A job computed before correction must also remain publishable afterward; retries retain the existing idempotent and lease-fencing behavior. Completion order does not establish which review is current.
+
+Historical snapshots and report exports retain their run's original input and complete result, including the transfer evidence attached to individual observations. A superseded marker may reflect the current study state, but contents, ancestry, fingerprints, numerical results and the run's decision must not be reconstructed from a later dataset. Existing databases and complete runs remain readable. Use the supplied correction-incident study to investigate this compatibility boundary.
+
+Physical source parsing and complete-delivery validation are distinct. A source may parse but refer to a sample missing from readings. Unmatched bindings reject complete publication. A measured correction that cannot supply a later withdrawal is physically invalid; unknown contents do not authorize clipping a newly resolved volume. Rejected deliveries do not change datasets or current review. A legal counterpart can publish normally. Original staged bytes remain authoritative, and successful publication is atomic.
+
+These requirements extend no scientific model and add no CLI command or database table. Implementations may remove reuse optimizations or recompute from the appropriate pinned evidence. Keep supported legacy workflows, tolerances and report integrity behavior.
+# Evidence recovery interface
+
+Use copies of supplied evidence. `truegate evidence-recover --db study.db --dry-run` returns a JSON plan without writing to the database or creating a backup. Apply uses `--backup /absolute/new/backup.db`; the destination must not exist or alias the input. Take an independently readable, consistent SQLite backup before mutation. Serialize against writers. An unexpected failure rolls back the whole apply.
+
+Keep full evidence identity, scientifically meaningful transfer bindings, and every distinct report row. Repair the live workflow and reconcile durably retained deliveries with stored studies. Work that has already produced a result keeps its inputs. Queued work must use the evidence available when it was submitted. A later valid publication remains current when older evidence is reconstructed. Allocated revision numbers remain monotonic concurrency tokens; they need not describe the age of the evidence.
+
+Retained bytes, their integrity records and durable publication history are evidence. Derived caches can be stale. Recovery must neither invent missing provenance nor undo valid progress made by an earlier recovery. Preserve existing dataset content, source bytes, events, attempts, runs and review decisions. Admit a study only if its evidence determines a unique safe result and resulting job keys remain valid; otherwise report it as blocked without partially changing it. Unrelated valid studies can proceed.
+
+The supported command emits `version: transfer-evidence-v1`, `mode: dry_run|apply`, `backup` (null for dry-run), and `studies`. Each study entry includes `campaign`, `status` (`unaffected`, `recoverable`, `recovered`, `already_recovered`, `blocked`), `sessions`, `jobs`, `runs`, `decisions`, and `unresolved`. Session mappings have `session`, `from_dataset`, `to_dataset`, `revision`, `sha256`; job mappings have `job`, `from_dataset`, `to_dataset`. Preserve runs as `run`, `dataset`, `action: preserved`, and decisions as `decision`, `run`, `action: preserved`. Additional fields are allowed. Blocked and unaffected entries have empty changes. Reasons are explanatory, not fixed wording.
+
+Commit a durable `transfer_evidence_recovered_v1` event for each reconciled study. Repeated runs retain its mappings and report `already_recovered` without duplicate datasets, moves or events. A no-change apply still needs a new backup. Preview reserves no IDs; preview and apply must agree semantically on unchanged input.
+
+`examples/recovery-incident/check_consistency.py` supplies a partial operational check. It is not a complete acceptance suite. Finish with `RECOVERY-NOTES.md` describing causes, validation, affected records and unresolved evidence. Reports must agree with execution.
+# Recovery ledger interoperability
+
+The append-only journal is the durable ordering authority. Display timestamps can come from different workers. Dataset revisions allocate storage and concurrency tokens.
+
+`transfer_evidence_recovered_preview` records a partial recovery, not a completed reconciliation. Payload version `transfer-evidence-preview-0` contains `sessions` with `session`, `from_dataset`, `to_dataset`, `sha256` and `jobs` with `job`, `from_dataset`, `to_dataset`. Appended datasets carry the complete normalized input. Publication pointers may still be original. The preview tool could pin waiting work to its last appended dataset. Adopt only verifiable matching revisions and preserve this audit record. Mismatching provenance is not permission to guess.
+
+A completed recovery may record `current_dataset` in its event. Current selection uses that evidence until a subsequent ordinary import advances the study. Already produced results remain attached to their original dataset. Historical acceptance must not transfer to different evidence.
+# Physical dispensing history
+
+Use `truegate transfer-preview input.json` to reconstruct a screening study's physical transfers without storing or fitting it. Ordinary `analyze`, import, run, jobs, review and export use the same reconstruction. Inputs without this feature retain their existing interpretation.
+
+A flat screening input may contain `transfer_history`, an object with a nonempty trimmed `revision`, `vessels`, `events`, and `bindings`. Limits are 4096 vessels, 100000 event records, 100000 bindings, and 64 distinct solutes. Identifiers are trimmed nonempty strings of at most 200 characters. Ordinals below are JSON integers, never booleans or floats, bounded by 9223372036854775807. Input array order and file arrival order have no physical meaning. Raw input fingerprints still bind the supplied arrays, as in existing imports.
+
+## Contents and physical transfers
+
+Each vessel has `id`, nonnegative `volume`, `volume_unit`, `concentrations` mapping compound IDs to nonnegative concentrations, and `concentration_unit`. Empty maps represent buffer; an empty vessel cannot declare nonzero concentration. Concentration units are the existing supported units. Volume units are `nL`, `uL`, `µL`, `μL`, and `mL`, case sensitive. Converted values, amounts and intermediate results must remain finite. All initial liquid and solute must be declared; no implicit reservoir refilling occurs.
+
+An event has `id`, positive `revision`, positive `sequence`, `source`, `destination`, and `status`. Endpoints are distinct declared vessel IDs. One ID identifies one physical operation, with fixed sequence and endpoints across all revisions. Different operations have different sequences. Revision changes correct evidence about that operation; they do not add another physical operation. A separate ID means an additional physical transfer, even with identical endpoints and volume.
+
+For each operation use its highest revision. Validate all revisions, including superseded ones. Duplicate `(id,revision)` records are accepted only when the fields above, status and normalized measured volume agree. Equivalent supported volume units compare after conversion. Conflicts, changing identity, malformed fields or undeclared endpoints reject the history. Selected events execute in increasing sequence order, not revision or array order. A source and destination may exchange liquid at different sequences; this is a valid temporal history, not a static graph cycle.
+
+Statuses `ok` and `partial` require positive `volume` and `volume_unit`; volume is actual delivered liquid, including for a partial operation. Statuses `failed` and `cancelled` require zero volume and a supported unit and change no contents. They do not undo a different successful operation. `unknown` means delivered volume is unavailable and must omit both volume fields. It makes source and destination contents unknown from that step onward. A later measured transfer from an unknown source makes the destination unknown; zero-volume failed/cancelled transfers do not spread uncertainty. Correcting the unknown event to a measured revision resolves it by replaying the history from the beginning.
+
+Known vessels are perfectly mixed before each transfer. For actual volume q, move each source solute amount times q/source volume, subtract q and those amounts from source, and add them to destination. Initial amount in pmol is concentration in uM times volume in uL. A successful operation cannot overdraw a known source. Roundoff within 1e-12 relative or absolute uL may be clamped to the available volume; a positive operation from an empty source is always rejected. Unknown contents stay unknown, with null volume and amounts; no nominal concentration is substituted. This model excludes evaporation, adsorption, precipitation and unmeasured mixing losses. It reconstructs declared evidence rather than certifying a robot's physical performance.
+
+## Measurement bindings and analysis
+
+A binding has `record_id`, `vessel`, and `sequence`. It names one existing sample, at most once, and one declared vessel. Sequence is zero for initial contents or a selected physical operation's sequence, and means immediately after that step. An observation cannot use liquid added later. Final vessel contents and bound measurement contents may therefore differ.
+
+The bound sample's concentration is the amount of its compound divided by total liquid volume. Mixtures retain separate solute amounts; the software does not infer biological selectivity. A positive known concentration is eligible for the existing plate QC and fitting. Unknown, empty, and zero-compound contents are excluded with reasons `unknown_transfer`, `empty_vessel`, and `zero_dose`. If any sample on a plate is bound, all other samples on that plate need bindings or are excluded as `missing_transfer_binding`. Controls cannot be bound. A plate cannot mix this history and legacy telemetry. Other plates retain their legacy calibrated or nominal behavior. History concentrations override nominal sample doses, including nominal zero.
+
+Usable observations have `dose_source: transfer_history`, reconstructed `dose_um`, null `calibration_revision`, and `transfer_binding` evidence. Plate `dispense_mode` is `transfer_history`. Existing calibration-uncertainty models may be used, but their central concentrations must agree with reconstructed physical doses within the existing relative tolerance; they cannot overwrite contradictory physical evidence.
+
+## Evidence interface
+
+Preview returns `histories`, an array. Each history exposes `campaign` (null for a flat input), `revision`, `history_sha256`, `steps`, `bindings`, and `final_vessels`. Screening results expose the same array as `transfer_history`, or null without the feature. Steps identify the selected operation, revision, sequence, endpoints, status, normalized `volume_ul`, and `source_state`/`destination_state` after the operation. Final vessels expose `id` and their state. Each state exposes `known`, `volume_ul`, `amounts_pmol` and `lineage` as sorted `{id,revision}` entries. Zero amount entries may be omitted.
+
+Lineage tracks the selected operations that affect known contents or remaining volume. A measured outgoing operation extends source ancestry with itself; destination ancestry is the union of prior source and destination ancestry plus that operation. An unknown operation uses that same ancestry rule. Failed/cancelled zero-volume operations appear in steps but add no contents ancestry. An unrelated branch must not appear in a binding's lineage. Bindings retain their contents and lineage at their specified sequence and additionally expose `compound`, `dose_um`, and status `usable`, `unknown`, `empty` or `zero_dose`. `dose_um` is null for unknown/empty contents. Evidence arrays are sorted by sequence, vessel ID or record ID as appropriate. History fingerprints bind the model used for reconstruction after campaign identity normalization. Original input fingerprints also bind the original local evidence. History fingerprints need not be equal after input-array reordering; physical results must agree.
+
+## Campaigns, ingestion and history
+
+In a campaign envelope, place one optional history inside each campaign, using that campaign's local record and compound IDs. Vessels, operation IDs and sequences are local to that campaign. Top-level history on an envelope is rejected. Entity normalization must preserve physical evidence without collisions or silent loss. Concentrations of local aliases resolving to the same canonical solute add. The preview exposes each campaign's name; bound record and compound identities use the application's existing canonical scope. Directly importing an internal `histories` wrapper is unsupported.
+
+Instrument manifests may declare at most one `transfer_history` source in addition to readings and optional legacy telemetry. Its exact UTF-8 JSON bytes, optionally BOM-prefixed, contain the complete history object. Malformed history rejects the whole source with line-zero diagnostics; record bindings and plate conflicts are checked once all sources are assembled. Source staging, fingerprints, retries, cache distrust and atomic publication retain the existing ingestion contract. Corrected histories use a new delivery ID and publish a complete new study revision.
+
+The full history participates in the existing input fingerprint, even if a correction leaves concentrations unchanged. Submitted jobs keep their pinned history and policy; later corrections cannot enter them. Current-review eligibility follows the current dataset, not completion order. Preserve historical reports and old databases. No new database table is required. New report snapshots retain original history plus reconstructed evidence; HTML displays it, and `transfer-bindings.csv` contains campaign, history revision, binding fields, compound, dose, known state, normalized volume, JSON amounts and JSON lineage. The CSV is fingerprinted in the report manifest. Existing reports without it still verify.
+
+Liquid handling can involve multiple aspirations and dispenses: [Opentrons complex command parameters](https://docs.opentrons.com/python-api/complex-commands/parameters/). This interchange contract is a research model, not a claim that those instruments export this exact format.
+# Durable analysis jobs
+
+Use the job commands when an analysis must survive a worker interruption. `job-submit --db DB --campaign ID [--policy FILE]` pins the current dataset, resolved policy and engine version. Repeating a submission for that same combination returns the same job. Subsequent imports or policy changes create independent jobs. Existing databases migrate additively; prior datasets, completed runs and decisions remain intact.
+
+`job-claim --db DB --job ID --worker NAME [--lease-seconds N]` acquires a queued or expired job and returns a token, increasing generation and expiry. Lease durations must be finite and between 1 and 3600 seconds; the default is 60. Only one worker may acquire a job at a time, including simultaneous claims from separate processes. A live lease and a completed job cannot be claimed. An expired attempt remains in history, and replacement clears its staged result. Workers use a shared system clock; deployment across unsynchronized hosts is unsupported.
+
+`job-heartbeat --db DB --job ID --token TOKEN [--lease-seconds N]` extends a live lease without shortening it. An expired or superseded token cannot heartbeat, compute, or publish. `job-compute --db DB --job ID --token TOKEN` reads the pinned input and policy, executes the normal analysis engine and stages its result. It checks ownership again before saving. It rejects an engine-version mismatch or stored input/policy fingerprint mismatch. Computation failure leaves no publishable result from that computation. Heartbeats may be issued by a separate process for analyses longer than a lease.
+
+`job-publish --db DB --job ID --token TOKEN` requires a staged result matching the pinned input, policy and engine fingerprints. Publication creates one completed run, completes the attempt and appends its publication event in one transaction. Repeating publication with the successful token returns the same run without another event, even after that lease's original expiry. Other tokens fail. If an identical completed synchronous run exists, publication reuses it; a differing result or an unfinished synchronous run conflicts. Staged work never appears as a completed run, cannot be reviewed or exported, and is discarded when a lease is replaced.
+
+Published runs use the ordinary show/review/export commands. An intervening import does not change a job's pinned input. Its resulting historical run remains exportable, but a review against a superseded dataset fails. A job's storage is in `jobs`; its attempts are in `job_attempts`. `generation`, `token`, `lease_until`, `staged`, `published_run`, attempt state and the ordinary `runs`/`events` records provide operational evidence for investigation. The database clock is Unix seconds. Tokens are worker fencing identifiers, not an authentication system.
+
+For a local example, create a campaign, import `examples/bridge.json`, submit a job, claim it, and use the returned token for compute and publish. Stopping a worker between those calls leaves durable state. Once its lease expires, another worker can claim and recompute. Completed jobs remain available as history.
+# Combining screening campaigns
+
+Screening accepts either the existing flat dataset or an object with `kind: "screening"` and a nonempty `campaigns` array. The latter must not also contain top-level `records` or `telemetry`. Each campaign has a unique trimmed `id`, an `entities` array, the usual screening `records`, and optional dispensing `telemetry`. Record, plate and compound names are local to each campaign. All existing per-campaign record, control and telemetry rules still apply.
+
+Each entity defines a trimmed `local_id`, `type`, `value`, `target` and optional `registry_id`. Types are `sequence` and `smiles`. Sequence identity removes whitespace and uppercases single-letter amino acid symbols (the twenty standard symbols plus X and *). SMILES identity preserves case and uses the exact trimmed string without internal whitespace. It is not chemical graph canonicalization; equivalent alternate SMILES spellings remain separate. Target is part of identity and is case sensitive. Identifiers and values use the application's ordinary text limits.
+
+Equal type, normalized value and target identify the same entity across campaigns, even when local names differ. Different identities must never pool because they share a local name. Distinct explicit registry IDs for one identity are a conflict, including within a mixed collision group. One registry ID assigned to different identities is also a conflict. Duplicate local entity definitions and sample references to undefined local entities are errors. Rejection must not create a new input revision or partial campaign import.
+
+Reconciliation assigns stable canonical compound IDs, scopes record and physical plate identities by campaign, and applies the same scope to dispensing telemetry. No delimiter convention may alias distinct campaign/local identifier pairs. Concentration, failure and plate-control decisions remain local to the correct source plate. Input order does not affect the analysis result. Flat screening inputs retain their existing compound identifiers.
+
+Analysis results expose `identity_catalog`, with each canonical ID's normalized identity and original campaign/local aliases, and `source_records`, mapping each resolved record to its original campaign, record, plate and local entity. Curve observations and exclusions use those resolved record IDs. Reports retain this mapping in their complete analysis snapshot and display the identity catalog in HTML. Their input snapshot and input fingerprint refer to the original imported envelope, not just the flattened measurements. Historical export preserves that binding after later imports.
+# Correction incident
+
+All measurements and reviewer identities in this example are synthetic. The supplied database contains two immutable input revisions with complete analyses and reviews, plus a queued job pinned to the first revision. Both revisions produce 100 uM measurements; the transferred volume and selected operation revision differ. The database was populated through the documented repository and jobs APIs.
+
+Run `PYTHONPATH=src python examples/correction-incident/reproduce.py /absolute/new/destination`. The script copies the supplied database before using it. It also starts a new study from the two JSON inputs. Inspect the printed states, job publication and historical reports. Preserve the supplied database and inputs as investigation evidence.
+# Transfer-history walkthrough
+
+Analyze `initial.json`, then compare `corrected.json`. The corrected measurement of `add-1` changes the early mixture and the later dilution. The separate late addition must not change either earlier readout. These small examples demonstrate reconstruction rather than a sufficiently sampled potency curve.
+
+Use `transfer-preview` to inspect step contents and bindings. Create a screening campaign, import the initial input, submit a job, import the correction, then complete the original job and export both analyses. Existing review and job documentation describes these commands.
+
+The `study.db` and `historical-report` artifacts contain an imported initial study and its analysis for inspection. They are generated by the application. They contain no reference implementation or private checks.
+
+From the application root run `PYTHONPATH=src python examples/transfer-history/reproduce.py /absolute/new-walkthrough-directory`. It copies the persisted study, submits a job, imports the correction, completes the pinned job and exports both histories. The output is calculated by the running application.
+"""Reconstruct well contents by replaying corrected physical transfers."""
+import math
+from decimal import Decimal
+from .codec import require, text, number, digest
+from .errors import WorkbenchError
+from .units import convert
+
+VOLUME = {'nL': .001, 'uL': 1., 'µL': 1., 'μL': 1., 'mL': 1000.}
+
+
+def identifier(value, label):
+    value_text = text(value, label)
+    if value_text != value:
+        raise WorkbenchError(label + ' must be trimmed')
+    return value_text
+
+
+def ordinal(value, label, minimum=1):
+    # Sequence and revision identities must not pass through a float conversion.
+    if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= 9223372036854775807:
+        raise WorkbenchError(label + ' must be a bounded JSON integer')
+    return value
+
+
+def volume(value, unit):
+    if not isinstance(unit, str) or unit not in VOLUME:
+        raise WorkbenchError('Unsupported volume unit')
+    number(value, 'volume', 0)
+    converted = float(Decimal(str(value)) * Decimal(str(VOLUME[unit])))
+    return number(converted, 'converted volume', 0)
+
+
+def concentration(value, unit):
+    if not isinstance(unit, str):
+        raise WorkbenchError('Concentration unit must be text')
+    return number(convert(value, unit, 'concentration'), 'converted concentration', 0)
+
+
+def view(state):
+    return {'volume_ul': state['volume'], 'amounts_pmol': dict(sorted(state['amounts'].items())) if state['known'] else None,
+            'known': state['known'],
+            'lineage': [{'id': key, 'revision': rev} for key, rev in sorted(state['lineage'].items())]}
+
+
+def replay(model, records=None):
+    require(model, ['revision', 'vessels', 'events', 'bindings'], 'transfer history')
+    identifier(model['revision'], 'history revision')
+    for key, limit in [('vessels',4096), ('events',100000), ('bindings',100000)]:
+        if not isinstance(model[key], list) or len(model[key]) > limit:
+            raise WorkbenchError(key + ' is not a bounded array')
+    states, solutes = {}, set()
+    for vessel in model['vessels']:
+        require(vessel, ['id','volume','volume_unit','concentrations','concentration_unit'], 'vessel')
+        key = identifier(vessel['id'], 'vessel id')
+        if key in states or not isinstance(vessel['concentrations'], dict):
+            raise WorkbenchError('Vessels must be unique with a concentrations object')
+        qty = volume(vessel['volume'], vessel['volume_unit'])
+        amounts = {}
+        concentration(0, vessel['concentration_unit'])
+        for compound, value in vessel['concentrations'].items():
+            identifier(compound, 'solute'); solutes.add(compound)
+            dose = concentration(value, vessel['concentration_unit'])
+            if qty == 0 and dose != 0:
+                raise WorkbenchError('An empty vessel cannot declare nonzero concentration')
+            if dose:
+                amounts[compound] = number(qty * dose, 'initial amount', 0)
+        states[key] = {'known':True, 'volume':qty, 'amounts':amounts, 'lineage':{}}
+    if len(solutes) > 64:
+        raise WorkbenchError('History allows at most 64 solutes')
+    revisions, identities, sequences = {}, {}, {}
+    for event in model['events']:
+        require(event, ['id','revision','sequence','source','destination','status'], 'transfer event')
+        key = identifier(event['id'], 'transfer id')
+        rev = ordinal(event['revision'], 'transfer revision')
+        seq = ordinal(event['sequence'], 'transfer sequence')
+        src, dst = identifier(event['source'], 'source'), identifier(event['destination'], 'destination')
+        if src not in states or dst not in states or src == dst:
+            raise WorkbenchError('Transfer endpoints must be distinct declared vessels')
+        identity = (seq, src, dst)
+        if key in identities and identities[key] != identity:
+            raise WorkbenchError('Transfer identity changes across revisions')
+        if seq in sequences and sequences[seq] != key:
+            raise WorkbenchError('Distinct transfers cannot share a sequence')
+        identities[key], sequences[seq] = identity, key
+        status = event['status']
+        if status not in ('ok','partial','failed','cancelled','unknown'):
+            raise WorkbenchError('Unknown physical transfer status')
+        if status == 'unknown':
+            if 'volume' in event or 'volume_unit' in event:
+                raise WorkbenchError('Unknown delivery must not claim a measured volume')
+            qty = None
+        else:
+            require(event, ['volume','volume_unit'], 'measured transfer')
+            qty = volume(event['volume'], event['volume_unit'])
+            if (status in ('ok','partial') and qty <= 0) or (status in ('failed','cancelled') and qty != 0):
+                raise WorkbenchError('Transfer status and actual delivered volume disagree')
+        normalized = {'id':key, 'revision':rev, 'sequence':seq, 'source':src,
+                      'destination':dst, 'status':status, 'volume_ul':qty}
+        versions = revisions.setdefault(key, {})
+        if rev in versions and versions[rev] != normalized:
+            raise WorkbenchError('Conflicting transfer revision')
+        versions[rev] = normalized
+    selected = sorted((versions[max(versions)] for versions in revisions.values()), key=lambda e:e['sequence'])
+    samples = {r['id']:r for r in records if r['role']=='sample'} if records is not None else None
+    bindings, by_sequence = {}, {}
+    for binding in model['bindings']:
+        require(binding, ['record_id','vessel','sequence'], 'transfer binding')
+        key = identifier(binding['record_id'], 'binding record')
+        vessel = identifier(binding['vessel'], 'binding vessel')
+        seq = ordinal(binding['sequence'], 'binding sequence', 0)
+        if key in bindings or vessel not in states or (seq != 0 and seq not in sequences):
+            raise WorkbenchError('Invalid or duplicate transfer binding')
+        if samples is not None and key not in samples:
+            raise WorkbenchError('Transfer binding must name an existing sample')
+        bindings[key] = binding
+        by_sequence.setdefault(seq, []).append(binding)
+    output, steps = [], []
+
+    def capture(seq):
+        for binding in sorted(by_sequence.get(seq, []), key=lambda b:b['record_id']):
+            state = states[binding['vessel']]
+            row = dict(binding, **view(state))
+            if samples is not None:
+                compound = samples[binding['record_id']]['compound']
+                dose = state['amounts'].get(compound, 0) / state['volume'] if state['known'] and state['volume'] else None
+                row.update(compound=compound, dose_um=dose,
+                           status='unknown' if not state['known'] else 'empty' if not state['volume'] else 'zero_dose' if not dose else 'usable')
+            output.append(row)
+
+    capture(0)
+    for event in selected:
+        src, dst = states[event['source']], states[event['destination']]
+        qty, status = event['volume_ul'], event['status']
+        affected = dict(src['lineage']); affected.update(dst['lineage']); affected[event['id']] = event['revision']
+        if status == 'unknown':
+            src_lineage = dict(src['lineage']); src_lineage[event['id']] = event['revision']
+            src.update(known=False, volume=None, amounts={}, lineage=src_lineage)
+            dst.update(known=False, volume=None, amounts={}, lineage=dict(affected))
+        elif status not in ('failed','cancelled'):
+            if src['known'] and src['volume'] == 0:
+                raise WorkbenchError('Transfer overdraws an empty source')
+            if src['known'] and qty > src['volume'] and not math.isclose(qty, src['volume'], rel_tol=1e-12, abs_tol=1e-12):
+                raise WorkbenchError('Transfer overdraws its source at execution time')
+            if src['known']:
+                qty = min(qty, src['volume'])
+                moved = {c: value * (qty/src['volume']) for c,value in src['amounts'].items()}
+                src['amounts'] = {c: max(0.,value-moved[c]) for c,value in src['amounts'].items()}
+                src['volume'] = max(0., src['volume']-qty)
+                if dst['known']:
+                    dst['volume'] = number(dst['volume']+qty, 'destination volume', 0)
+                    for c,value in moved.items():
+                        dst['amounts'][c] = number(dst['amounts'].get(c,0)+value, 'destination amount', 0)
+                # Removing homogeneous liquid does not introduce destination ancestry into source.
+                src['lineage'][event['id']] = event['revision']
+                dst['lineage'] = affected
+            else:
+                dst.update(known=False, volume=None, amounts={}, lineage=dict(affected))
+                src['lineage'][event['id']] = event['revision']
+        else:
+            # A zero-volume failed attempt contributes no liquid and no contents ancestry.
+            pass
+        steps.append(dict(event, source_state=view(src), destination_state=view(dst)))
+        capture(event['sequence'])
+    return {'revision':model['revision'], 'history_sha256':digest(model), 'steps':steps,
+            'bindings':sorted(output, key=lambda b:b['record_id']),
+            'final_vessels':[dict(id=k, **view(v)) for k,v in sorted(states.items())]}
+
+
+def histories(data):
+    if 'transfer_history' not in data:
+        return []
+    if data['kind'] != 'screening':
+        raise WorkbenchError('Transfer history is supported only for screening')
+    model = data['transfer_history']
+    if isinstance(model, dict) and 'histories' in model:
+        entries = model['histories']
+    else:
+        entries = [{'campaign':None, 'model':model}]
+    results = []
+    for entry in entries:
+        results.append(dict(campaign=entry['campaign'], **replay(entry['model'], data['records'])))
+    bound = [b['record_id'] for h in results for b in h['bindings']]
+    if len(bound) != len(set(bound)):
+        raise WorkbenchError('Sample is bound by multiple transfer histories')
+    rows = {r['id']:r for r in data['records']}
+    plates = {rows[key]['plate'] for key in bound}
+    if any(e['plate'] in plates for e in data.get('telemetry', [])):
+        raise WorkbenchError('A plate cannot mix legacy telemetry and physical transfer history')
+    return results
+"""Recover suppressed delivery revisions from immutable bytes and publication order."""
+import hashlib
+import os
+from pathlib import Path
+import sqlite3
+from .codec import loads, dumps, digest
+from .errors import WorkbenchError
+from .ingest_resolution import assemble
+from .repository import event, now
+
+VERSION='transfer-evidence-v1'
+ACTION='transfer_evidence_recovered_v1'
+
+
+def rows(db,query,args=()):
+    return [dict(row) for row in db.execute(query,args)]
+
+
+def plan(db):
+    """Audit published dataset links before attempting retained-delivery recovery."""
+    studies=[]
+    for campaign in rows(db,'SELECT id FROM campaigns ORDER BY id'):
+        cid=campaign['id']
+        entry=dict(campaign=cid,status='unaffected',sessions=[],jobs=[],
+                   runs=[dict(run=r['id'],dataset=r['dataset'],action='preserved') for r in rows(db,'SELECT id,dataset FROM runs WHERE campaign=? ORDER BY id',(cid,))],
+                   decisions=[dict(decision=d['id'],run=d['run'],action='preserved') for d in rows(db,'SELECT id,run FROM decisions WHERE campaign=? ORDER BY id',(cid,))],unresolved=[])
+        studies.append(entry)
+        for session in rows(db,"SELECT * FROM ingest_sessions WHERE campaign=? AND state='published'",(cid,)):
+            if not db.execute('SELECT id FROM datasets WHERE id=?',(session['published_dataset'],)).fetchone():
+                entry['status']='blocked';entry['unresolved'].append(dict(reason='Published dataset link is absent'))
+    return studies
+
+
+def public(studies,mode,backup=None):
+    return dict(version=VERSION,mode=mode,backup=str(backup) if backup else None,
+                studies=[{k:v for k,v in entry.items() if not k.startswith('_')} for entry in studies])
+
+
+def recover(path,dry_run=False,backup=None):
+    path=Path(path).resolve()
+    if not path.is_file():raise WorkbenchError('An existing database is required')
+    db=sqlite3.connect('file:'+str(path)+'?mode='+('ro' if dry_run else 'rw'),uri=True,isolation_level=None,timeout=30)
+    db.row_factory=sqlite3.Row
+    try:
+        db.execute('PRAGMA foreign_keys=ON')
+        db.execute('BEGIN' if dry_run else 'BEGIN IMMEDIATE')
+        studies=plan(db)
+        if dry_run:
+            db.rollback();return public(studies,'dry_run')
+        if backup is None:raise WorkbenchError('Apply requires a new backup destination')
+        backup=Path(backup).resolve()
+        if backup==path or backup.exists():raise WorkbenchError('Choose a new backup destination')
+        backup.parent.mkdir(parents=True,exist_ok=True)
+        fd=os.open(backup,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.close(fd)
+        # A separate reader can snapshot while this connection holds the write reservation.
+        reader=sqlite3.connect('file:'+str(path)+'?mode=ro',uri=True)
+        destination=sqlite3.connect(str(backup))
+        try:reader.backup(destination)
+        finally:destination.close();reader.close()
+        for entry in studies:
+            if entry['status']!='recoverable':continue
+            cid=entry['campaign']
+            for correction in entry['sessions']:
+                content=entry['_contents'][correction['session']]
+                db.execute('INSERT INTO datasets VALUES (?,?,?,?,?,?)',(correction['to_dataset'],cid,correction['revision'],correction['sha256'],dumps(content),now()))
+                db.execute('UPDATE ingest_sessions SET published_dataset=? WHERE id=?',(correction['to_dataset'],correction['session']))
+            for job in entry['jobs']:
+                db.execute("UPDATE jobs SET dataset=? WHERE id=? AND state='queued'",(job['to_dataset'],job['job']))
+            entry['status']='recovered'
+            event(db,cid,ACTION,{k:v for k,v in entry.items() if not k.startswith('_')})
+        db.commit();return public(studies,'apply',backup)
+    except BaseException:
+        db.rollback();raise
+    finally:db.close()

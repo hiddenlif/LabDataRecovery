@@ -1,0 +1,2 @@
+apply Counter({'recovered': 18, 'unaffected': 12, 'blocked': 10})
+repeat Counter({'already_recovered': 18, 'unaffected': 12, 'blocked': 10})

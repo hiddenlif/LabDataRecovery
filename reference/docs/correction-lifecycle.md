@@ -1,0 +1,11 @@
+# Correction lifecycle
+
+A screening correction is new evidence even when all fitted concentrations and responses remain equal. Transfer volumes, selected operation revisions, lineage, uncertainty and exact original source evidence are part of the dataset identity. Importing a changed complete input creates a new immutable dataset revision. Repeating the exact latest input reuses its revision without retiring its current review. These rules apply to flat and campaign inputs and instrument publication.
+
+A new dataset has no current review until an analysis of that dataset is reviewed. Earlier decisions remain in history. Submitted jobs bind their dataset, policy and engine at submission. Computing or publishing after a correction must not substitute the newest evidence, including when its numerical measurement projection is identical. A job computed before correction must also remain publishable afterward; retries retain the existing idempotent and lease-fencing behavior. Completion order does not establish which review is current.
+
+Historical snapshots and report exports retain their run's original input and complete result, including the transfer evidence attached to individual observations. A superseded marker may reflect the current study state, but contents, ancestry, fingerprints, numerical results and the run's decision must not be reconstructed from a later dataset. Existing databases and complete runs remain readable. Use the supplied correction-incident study to investigate this compatibility boundary.
+
+Physical source parsing and complete-delivery validation are distinct. A source may parse but refer to a sample missing from readings. Unmatched bindings reject complete publication. A measured correction that cannot supply a later withdrawal is physically invalid; unknown contents do not authorize clipping a newly resolved volume. Rejected deliveries do not change datasets or current review. A legal counterpart can publish normally. Original staged bytes remain authoritative, and successful publication is atomic.
+
+These requirements extend no scientific model and add no CLI command or database table. Implementations may remove reuse optimizations or recompute from the appropriate pinned evidence. Keep supported legacy workflows, tolerances and report integrity behavior.

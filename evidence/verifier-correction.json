@@ -1,0 +1,12 @@
+{
+  "reason": "Independent contract audit of inherited test15 requirements, before private pilot grading",
+  "public_task_unchanged": true,
+  "original_verifier": "0.7.1",
+  "corrected_verifier": "0.7.2",
+  "changes": [
+    "Accept safe later-direct recovery only when later direct input remains current and earlier jobs/evidence are correctly repaired and preserved; conservative blocked handling also accepted",
+    "Require distinct new monotonic revisions, without prescribing allocation order",
+    "Require one completion event per recovered study; allow additional audit events on first apply"
+  ],
+  "independence": "Reviewer inspected no solver trajectories or outcomes. Author had observed public progress; the correction is a disclosed calibration-stage contract repair, not a preregistered difficulty result."
+}

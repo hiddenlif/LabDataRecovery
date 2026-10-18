@@ -1,0 +1,183 @@
+{
+  "kind": "screening",
+  "records": [
+    {
+      "id": "vehicle-0",
+      "plate": "readout",
+      "well": "vehicle0",
+      "assay": "primary",
+      "role": "vehicle",
+      "signal": 9998
+    },
+    {
+      "id": "vehicle-1",
+      "plate": "readout",
+      "well": "vehicle1",
+      "assay": "primary",
+      "role": "vehicle",
+      "signal": 10000
+    },
+    {
+      "id": "vehicle-2",
+      "plate": "readout",
+      "well": "vehicle2",
+      "assay": "primary",
+      "role": "vehicle",
+      "signal": 10002
+    },
+    {
+      "id": "positive-0",
+      "plate": "readout",
+      "well": "positive0",
+      "assay": "primary",
+      "role": "positive",
+      "signal": 198
+    },
+    {
+      "id": "positive-1",
+      "plate": "readout",
+      "well": "positive1",
+      "assay": "primary",
+      "role": "positive",
+      "signal": 200
+    },
+    {
+      "id": "positive-2",
+      "plate": "readout",
+      "well": "positive2",
+      "assay": "primary",
+      "role": "positive",
+      "signal": 202
+    },
+    {
+      "id": "early",
+      "plate": "readout",
+      "well": "A1",
+      "assay": "primary",
+      "role": "sample",
+      "compound": "X",
+      "dose": 0,
+      "dose_unit": "uM",
+      "signal": 6000
+    },
+    {
+      "id": "late",
+      "plate": "readout",
+      "well": "A2",
+      "assay": "primary",
+      "role": "sample",
+      "compound": "X",
+      "dose": 0,
+      "dose_unit": "uM",
+      "signal": 5500
+    },
+    {
+      "id": "downstream",
+      "plate": "readout",
+      "well": "A3",
+      "assay": "primary",
+      "role": "sample",
+      "compound": "X",
+      "dose": 0,
+      "dose_unit": "uM",
+      "signal": 5000
+    }
+  ],
+  "transfer_history": {
+    "revision": "delivery-B",
+    "vessels": [
+      {
+        "id": "stock",
+        "volume": 100,
+        "volume_unit": "uL",
+        "concentrations": {
+          "X": 1000
+        },
+        "concentration_unit": "uM"
+      },
+      {
+        "id": "mix",
+        "volume": 90,
+        "volume_unit": "uL",
+        "concentrations": {},
+        "concentration_unit": "uM"
+      },
+      {
+        "id": "assay",
+        "volume": 80,
+        "volume_unit": "uL",
+        "concentrations": {},
+        "concentration_unit": "uM"
+      }
+    ],
+    "events": [
+      {
+        "id": "add-1",
+        "revision": 1,
+        "sequence": 1,
+        "source": "stock",
+        "destination": "mix",
+        "status": "partial",
+        "volume": 5,
+        "volume_unit": "uL"
+      },
+      {
+        "id": "add-2",
+        "revision": 1,
+        "sequence": 2,
+        "source": "stock",
+        "destination": "mix",
+        "status": "ok",
+        "volume": 5,
+        "volume_unit": "uL"
+      },
+      {
+        "id": "dilute",
+        "revision": 1,
+        "sequence": 3,
+        "source": "mix",
+        "destination": "assay",
+        "status": "ok",
+        "volume": 20,
+        "volume_unit": "uL"
+      },
+      {
+        "id": "late-addition",
+        "revision": 1,
+        "sequence": 4,
+        "source": "stock",
+        "destination": "mix",
+        "status": "ok",
+        "volume": 10,
+        "volume_unit": "uL"
+      },
+      {
+        "id": "add-1",
+        "revision": 2,
+        "sequence": 1,
+        "source": "stock",
+        "destination": "mix",
+        "status": "partial",
+        "volume": 4,
+        "volume_unit": "uL"
+      }
+    ],
+    "bindings": [
+      {
+        "record_id": "early",
+        "vessel": "mix",
+        "sequence": 1
+      },
+      {
+        "record_id": "late",
+        "vessel": "mix",
+        "sequence": 2
+      },
+      {
+        "record_id": "downstream",
+        "vessel": "assay",
+        "sequence": 3
+      }
+    ]
+  }
+}

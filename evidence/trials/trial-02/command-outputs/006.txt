@@ -1,0 +1,561 @@
+"""Reconstruct well contents by replaying corrected physical transfers."""
+import math
+from decimal import Decimal
+from .codec import require, text, number, digest
+from .errors import WorkbenchError
+from .units import convert
+
+VOLUME = {'nL': .001, 'uL': 1., 'µL': 1., 'μL': 1., 'mL': 1000.}
+
+
+def identifier(value, label):
+    value_text = text(value, label)
+    if value_text != value:
+        raise WorkbenchError(label + ' must be trimmed')
+    return value_text
+
+
+def ordinal(value, label, minimum=1):
+    # Sequence and revision identities must not pass through a float conversion.
+    if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= 9223372036854775807:
+        raise WorkbenchError(label + ' must be a bounded JSON integer')
+    return value
+
+
+def volume(value, unit):
+    if not isinstance(unit, str) or unit not in VOLUME:
+        raise WorkbenchError('Unsupported volume unit')
+    number(value, 'volume', 0)
+    converted = float(Decimal(str(value)) * Decimal(str(VOLUME[unit])))
+    return number(converted, 'converted volume', 0)
+
+
+def concentration(value, unit):
+    if not isinstance(unit, str):
+        raise WorkbenchError('Concentration unit must be text')
+    return number(convert(value, unit, 'concentration'), 'converted concentration', 0)
+
+
+def view(state):
+    return {'volume_ul': state['volume'], 'amounts_pmol': dict(sorted(state['amounts'].items())) if state['known'] else None,
+            'known': state['known'],
+            'lineage': [{'id': key, 'revision': rev} for key, rev in sorted(state['lineage'].items())]}
+
+
+def replay(model, records=None):
+    require(model, ['revision', 'vessels', 'events', 'bindings'], 'transfer history')
+    identifier(model['revision'], 'history revision')
+    for key, limit in [('vessels',4096), ('events',100000), ('bindings',100000)]:
+        if not isinstance(model[key], list) or len(model[key]) > limit:
+            raise WorkbenchError(key + ' is not a bounded array')
+    states, solutes = {}, set()
+    for vessel in model['vessels']:
+        require(vessel, ['id','volume','volume_unit','concentrations','concentration_unit'], 'vessel')
+        key = identifier(vessel['id'], 'vessel id')
+        if key in states or not isinstance(vessel['concentrations'], dict):
+            raise WorkbenchError('Vessels must be unique with a concentrations object')
+        qty = volume(vessel['volume'], vessel['volume_unit'])
+        amounts = {}
+        concentration(0, vessel['concentration_unit'])
+        for compound, value in vessel['concentrations'].items():
+            identifier(compound, 'solute'); solutes.add(compound)
+            dose = concentration(value, vessel['concentration_unit'])
+            if qty == 0 and dose != 0:
+                raise WorkbenchError('An empty vessel cannot declare nonzero concentration')
+            if dose:
+                amounts[compound] = number(qty * dose, 'initial amount', 0)
+        states[key] = {'known':True, 'volume':qty, 'amounts':amounts, 'lineage':{}}
+    if len(solutes) > 64:
+        raise WorkbenchError('History allows at most 64 solutes')
+    revisions, identities, sequences = {}, {}, {}
+    for event in model['events']:
+        require(event, ['id','revision','sequence','source','destination','status'], 'transfer event')
+        key = identifier(event['id'], 'transfer id')
+        rev = ordinal(event['revision'], 'transfer revision')
+        seq = ordinal(event['sequence'], 'transfer sequence')
+        src, dst = identifier(event['source'], 'source'), identifier(event['destination'], 'destination')
+        if src not in states or dst not in states or src == dst:
+            raise WorkbenchError('Transfer endpoints must be distinct declared vessels')
+        identity = (seq, src, dst)
+        if key in identities and identities[key] != identity:
+            raise WorkbenchError('Transfer identity changes across revisions')
+        if seq in sequences and sequences[seq] != key:
+            raise WorkbenchError('Distinct transfers cannot share a sequence')
+        identities[key], sequences[seq] = identity, key
+        status = event['status']
+        if status not in ('ok','partial','failed','cancelled','unknown'):
+            raise WorkbenchError('Unknown physical transfer status')
+        if status == 'unknown':
+            if 'volume' in event or 'volume_unit' in event:
+                raise WorkbenchError('Unknown delivery must not claim a measured volume')
+            qty = None
+        else:
+            require(event, ['volume','volume_unit'], 'measured transfer')
+            qty = volume(event['volume'], event['volume_unit'])
+            if (status in ('ok','partial') and qty <= 0) or (status in ('failed','cancelled') and qty != 0):
+                raise WorkbenchError('Transfer status and actual delivered volume disagree')
+        normalized = {'id':key, 'revision':rev, 'sequence':seq, 'source':src,
+                      'destination':dst, 'status':status, 'volume_ul':qty}
+        versions = revisions.setdefault(key, {})
+        if rev in versions and versions[rev] != normalized:
+            raise WorkbenchError('Conflicting transfer revision')
+        versions[rev] = normalized
+    selected = sorted((versions[max(versions)] for versions in revisions.values()), key=lambda e:e['sequence'])
+    samples = {r['id']:r for r in records if r['role']=='sample'} if records is not None else None
+    bindings, by_sequence = {}, {}
+    for binding in model['bindings']:
+        require(binding, ['record_id','vessel','sequence'], 'transfer binding')
+        key = identifier(binding['record_id'], 'binding record')
+        vessel = identifier(binding['vessel'], 'binding vessel')
+        seq = ordinal(binding['sequence'], 'binding sequence', 0)
+        if key in bindings or vessel not in states or (seq != 0 and seq not in sequences):
+            raise WorkbenchError('Invalid or duplicate transfer binding')
+        if samples is not None and key not in samples:
+            raise WorkbenchError('Transfer binding must name an existing sample')
+        bindings[key] = binding
+        by_sequence.setdefault(seq, []).append(binding)
+    output, steps = [], []
+
+    def capture(seq):
+        for binding in sorted(by_sequence.get(seq, []), key=lambda b:b['record_id']):
+            state = states[binding['vessel']]
+            row = dict(binding, **view(state))
+            if samples is not None:
+                compound = samples[binding['record_id']]['compound']
+                dose = state['amounts'].get(compound, 0) / state['volume'] if state['known'] and state['volume'] else None
+                row.update(compound=compound, dose_um=dose,
+                           status='unknown' if not state['known'] else 'empty' if not state['volume'] else 'zero_dose' if not dose else 'usable')
+            output.append(row)
+
+    capture(0)
+    for event in selected:
+        src, dst = states[event['source']], states[event['destination']]
+        qty, status = event['volume_ul'], event['status']
+        affected = dict(src['lineage']); affected.update(dst['lineage']); affected[event['id']] = event['revision']
+        if status == 'unknown':
+            src_lineage = dict(src['lineage']); src_lineage[event['id']] = event['revision']
+            src.update(known=False, volume=None, amounts={}, lineage=src_lineage)
+            dst.update(known=False, volume=None, amounts={}, lineage=dict(affected))
+        elif status not in ('failed','cancelled'):
+            if src['known'] and src['volume'] == 0:
+                raise WorkbenchError('Transfer overdraws an empty source')
+            if src['known'] and qty > src['volume'] and not math.isclose(qty, src['volume'], rel_tol=1e-12, abs_tol=1e-12):
+                raise WorkbenchError('Transfer overdraws its source at execution time')
+            if src['known']:
+                qty = min(qty, src['volume'])
+                moved = {c: value * (qty/src['volume']) for c,value in src['amounts'].items()}
+                src['amounts'] = {c: max(0.,value-moved[c]) for c,value in src['amounts'].items()}
+                src['volume'] = max(0., src['volume']-qty)
+                if dst['known']:
+                    dst['volume'] = number(dst['volume']+qty, 'destination volume', 0)
+                    for c,value in moved.items():
+                        dst['amounts'][c] = number(dst['amounts'].get(c,0)+value, 'destination amount', 0)
+                # Removing homogeneous liquid does not introduce destination ancestry into source.
+                src['lineage'][event['id']] = event['revision']
+                dst['lineage'] = affected
+            else:
+                dst.update(known=False, volume=None, amounts={}, lineage=dict(affected))
+                src['lineage'][event['id']] = event['revision']
+        else:
+            # A zero-volume failed attempt contributes no liquid and no contents ancestry.
+            pass
+        steps.append(dict(event, source_state=view(src), destination_state=view(dst)))
+        capture(event['sequence'])
+    return {'revision':model['revision'], 'history_sha256':digest(model), 'steps':steps,
+            'bindings':sorted(output, key=lambda b:b['record_id']),
+            'final_vessels':[dict(id=k, **view(v)) for k,v in sorted(states.items())]}
+
+
+def histories(data):
+    if 'transfer_history' not in data:
+        return []
+    if data['kind'] != 'screening':
+        raise WorkbenchError('Transfer history is supported only for screening')
+    model = data['transfer_history']
+    if isinstance(model, dict) and 'histories' in model:
+        entries = model['histories']
+    else:
+        entries = [{'campaign':None, 'model':model}]
+    results = []
+    for entry in entries:
+        results.append(dict(campaign=entry['campaign'], **replay(entry['model'], data['records'])))
+    bound = [b['record_id'] for h in results for b in h['bindings']]
+    if len(bound) != len(set(bound)):
+        raise WorkbenchError('Sample is bound by multiple transfer histories')
+    rows = {r['id']:r for r in data['records']}
+    plates = {rows[key]['plate'] for key in bound}
+    if any(e['plate'] in plates for e in data.get('telemetry', [])):
+        raise WorkbenchError('A plate cannot mix legacy telemetry and physical transfer history')
+    return results
+"""Evidence identity across revisions, workers, review and portable reports."""
+from copy import deepcopy
+import csv
+import hashlib
+import io
+from pathlib import Path
+import shutil
+import sqlite3
+
+import pytest
+
+from truegate.codec import digest, dumps, load, loads
+from truegate.engine import analyze
+from truegate.errors import Conflict, WorkbenchError
+from truegate.ingestion import Ingestion
+from truegate.instrument_files import HEADERS
+from truegate.jobs import Jobs
+from truegate.reporting import export, verify
+from truegate.repository import Repository
+
+
+def evidence():
+    records = [dict(id=f'{role}-{i}', plate='P', well=f'{role}-{i}',
+                    assay='primary', role=role, signal=signal + i)
+               for role, signal in [('vehicle', 10000), ('positive', 100)]
+               for i in range(3)]
+    records += [dict(id=key, plate='P', well=key, assay='primary', role='sample',
+                     signal=signal, compound='X', dose=0, dose_unit='uM')
+                for key, signal in [('early', 6000), ('late', 4500)]]
+    return {'kind': 'screening', 'records': records, 'transfer_history': {
+        'revision': 'original',
+        'vessels': [dict(id=key, volume=vol, volume_unit='uL',
+                         concentrations=contents, concentration_unit='uM')
+                    for key, vol, contents in [('stock', 96, {'X': 73}),
+                                               ('well', 0, {}), ('aliquot', 0, {})]],
+        'events': [dict(id=key, revision=1, sequence=seq, source=src,
+                        destination=dst, status='ok', volume=vol, volume_unit='uL')
+                   for key, seq, src, dst, vol in [('load', 1, 'stock', 'well', 24),
+                                                  ('take', 2, 'well', 'aliquot', 9)]],
+        'bindings': [dict(record_id=key, vessel=vessel, sequence=seq)
+                     for key, vessel, seq in [('early', 'well', 1), ('late', 'aliquot', 2)]]}}
+
+
+def correction(data):
+    changed = deepcopy(data)
+    history = changed['transfer_history']
+    history['revision'] = 'corrected'
+    history['events'].insert(0, dict(history['events'][0], revision=2, volume=12))
+    return changed
+
+
+def envelope(data, campaign):
+    if not campaign:
+        return data
+    return {'kind': 'screening', 'campaigns': [dict(
+        id='local-study', entities=[dict(local_id='X', type='sequence', value='ACD', target='T')],
+        records=data['records'], transfer_history=data['transfer_history'])]}
+
+
+def observations(analysis):
+    return [o for compound in analysis['result']['compounds']
+            for channel in compound['channels'].values() for o in channel['observations']]
+
+
+@pytest.mark.parametrize('campaign_input', [False, True])
+@pytest.mark.parametrize('change', ['volume', 'revision', 'order', 'unused_contents'])
+def test_changed_evidence_requires_new_review(tmp_path, campaign_input, change):
+    original = evidence()
+    changed = deepcopy(original)
+    history = changed['transfer_history']
+    if change == 'volume':
+        changed = correction(original)
+    elif change == 'revision':
+        history['events'][0]['revision'] = 7
+    elif change == 'order':
+        history['events'].reverse()
+    else:
+        history['vessels'].append(dict(id='unused', volume=11, volume_unit='uL',
+                                       concentrations={'X': 3}, concentration_unit='uM'))
+    original, changed = (envelope(d, campaign_input) for d in (original, changed))
+    repo = Repository(tmp_path / 'study.db')
+    campaign = repo.create('Correction', 'screening')['campaign']
+    first = repo.import_data(campaign, original)
+    run = repo.run(campaign)['run']
+    repo.review(campaign, run, 'accept', 'Reviewer', 'Inspected original', 1)
+    before = repo.snapshot(campaign, run)
+    assert observations(before['analysis'])
+    assert repo.import_data(campaign, deepcopy(original))['reused']
+    assert repo.show(campaign)['current_review']['run'] == run
+
+    second = repo.import_data(campaign, changed)
+    assert second['revision'] == 2 and not second['reused']
+    assert second['sha256'] == digest(changed) != first['sha256']
+    assert repo.show(campaign)['current_review'] is None
+    with pytest.raises(Conflict):
+        repo.review(campaign, run, 'accept', 'Reviewer', 'Stale run', 2)
+    new = repo.run(campaign)
+    assert [o['dose_um'] for o in observations(new['analysis'])] == pytest.approx([73, 73])
+    repo.review(campaign, new['run'], 'hold', 'Reviewer', 'Inspect correction', 2)
+    assert repo.import_data(campaign, changed)['reused']
+    assert repo.show(campaign)['current_review']['action'] == 'hold'
+    assert len(repo.show(campaign)['decisions']) == 2
+
+    historical = repo.snapshot(campaign, run)
+    assert historical == dict(before, superseded=True)
+    for name, snap in [('before', before), ('historical', historical)]:
+        export(snap, tmp_path / name)
+        assert verify(tmp_path / name)['verified']
+        assert load(tmp_path / name / 'snapshot.json') == snap
+    for filename in ['summary.csv', 'transfer-bindings.csv']:
+        assert (tmp_path / 'before' / filename).read_bytes() == (tmp_path / 'historical' / filename).read_bytes()
+    # Reverting evidence is another revision, not a return to an accepted dataset.
+    assert repo.import_data(campaign, original)['revision'] == 3
+    assert repo.show(campaign)['current_review'] is None
+
+
+@pytest.mark.parametrize('compute_before', [False, True])
+@pytest.mark.parametrize('existing_run', [False, True])
+@pytest.mark.parametrize('campaign_input', [False, True])
+def test_jobs_keep_submitted_evidence_and_publication_is_idempotent(
+        tmp_path, compute_before, existing_run, campaign_input):
+    path = tmp_path / 'jobs.db'
+    repo, jobs = Repository(path), Jobs(path)
+    campaign = repo.create('Pinned work', 'screening')['campaign']
+    original = envelope(evidence(), campaign_input)
+    repo.import_data(campaign, original)
+    prior_run = repo.run(campaign)['run'] if existing_run else None
+    job = jobs.submit(campaign)['job']
+    assert jobs.submit(campaign) == {'job': job, 'reused': True}
+    token = jobs.claim(job, 'worker', 300)['token']
+    if compute_before:
+        jobs.compute(job, token)
+    repo.import_data(campaign, envelope(correction(evidence()), campaign_input))
+    current_run = repo.run(campaign)['run']
+    review = repo.review(campaign, current_run, 'accept', 'Reviewer', 'Correction inspected', 2)
+    assert jobs.submit(campaign)['job'] != job
+    if not compute_before:
+        Jobs(path).compute(job, token)
+    published = Jobs(path).publish(job, token)
+    if existing_run:
+        assert published['run'] == prior_run and published['reused']
+    snap = Repository(path).snapshot(campaign, published['run'])
+    assert snap['input'] == original and snap['analysis'] == analyze(original)
+    assert snap['superseded'] and snap['review'] is None
+    state = repo.show(campaign)
+    assert state['current_review']['id'] == review['decision']
+    assert jobs.publish(job, token)['run'] == published['run']
+    assert repo.show(campaign) == state
+    with pytest.raises(Conflict):
+        jobs.publish(job, 'another-token')
+    with pytest.raises(Conflict):
+        repo.review(campaign, published['run'], 'accept', 'Reviewer', 'Old work', 2)
+
+
+def test_supplied_database_preserves_complete_runs_and_reuses_old_run(tmp_path, monkeypatch):
+    incident = Path(__file__).resolve().parents[1] / 'examples' / 'correction-incident'
+    ids = load(incident / 'identifiers.json')
+    path = tmp_path / 'existing.db'
+    shutil.copyfile(incident / 'study.db', path)
+    repo, jobs = Repository(path), Jobs(path)
+    before = repo.show(ids['campaign'])
+    with sqlite3.connect(path) as db:
+        stored = {run: loads(db.execute('SELECT result FROM runs WHERE id=?', (run,)).fetchone()[0])
+                  for run in [ids['previous_run'], ids['current_run']]}
+    # Historical reads must work without running the current engine at all.
+    with monkeypatch.context() as patch:
+        def unexpected_analysis(*args, **kwargs):
+            pytest.fail('Snapshot recomputed a completed run')
+        patch.setattr('truegate.engine.analyze', unexpected_analysis)
+        for run, result in stored.items():
+            snap = repo.snapshot(ids['campaign'], run)
+            assert snap['analysis'] == result
+            export(snap, tmp_path / run)
+            assert verify(tmp_path / run)['verified']
+    token = jobs.claim(ids['queued_job'], 'worker', 300)['token']
+    jobs.compute(ids['queued_job'], token)
+    published = jobs.publish(ids['queued_job'], token)
+    assert published['run'] == ids['previous_run'] and published['reused']
+    assert repo.show(ids['campaign'])['current_review'] == before['current_review']
+
+
+def stage(ingest, campaign, data, delivery, revision, suffix=b''):
+    stream = io.StringIO(newline='')
+    writer = csv.DictWriter(stream, fieldnames=HEADERS['readings'])
+    writer.writeheader()
+    writer.writerows(dict(r, revision=1) for r in data['records'])
+    sources = {'readings': stream.getvalue().encode(),
+               'transfer_history': dumps(data['transfer_history']).encode() + suffix}
+    manifest = {'delivery_id': delivery, 'expected_revision': revision, 'sources': [
+        dict(id=kind, kind=kind, sha256=hashlib.sha256(raw).hexdigest())
+        for kind, raw in sources.items()]}
+    session = ingest.open(campaign, manifest)['session']
+    states = {kind: ingest.add(session, kind, raw) for kind, raw in reversed(list(sources.items()))}
+    return session, states
+
+
+def test_instrument_publication_binds_exact_bytes_and_rejects_unmatched_samples(tmp_path):
+    path = tmp_path / 'ingest.db'
+    repo, ingest = Repository(path), Ingestion(path)
+    campaign = repo.create('Instrument corrections', 'screening')['campaign']
+    original = evidence()
+    session, _ = stage(ingest, campaign, original, 'initial', 0)
+    assert ingest.publish(session)['revision'] == 1
+    run = repo.run(campaign)['run']
+    repo.review(campaign, run, 'accept', 'Reviewer', 'Initial delivery', 1)
+    before = repo.snapshot(campaign, run)
+    state = repo.show(campaign)
+    invalid = correction(original)
+    invalid['transfer_history']['bindings'][0]['record_id'] = 'absent-reading'
+    session, states = stage(ingest, campaign, invalid, 'unmatched', 1)
+    assert all(s['state'] == 'accepted' for s in states.values())
+    for operation in [ingest.preview, ingest.publish]:
+        with pytest.raises(WorkbenchError, match='existing sample'):
+            operation(session)
+    after = repo.show(campaign)
+    assert after['datasets'] == state['datasets'] and after['current_review'] == state['current_review']
+    assert ingest.show(session)['state'] == 'open'
+
+    session, _ = stage(ingest, campaign, correction(original), 'legal', 1)
+    assert ingest.publish(session)['revision'] == 2
+    assert repo.show(campaign)['current_review'] is None
+    run2 = repo.run(campaign)['run']
+    repo.review(campaign, run2, 'accept', 'Reviewer', 'Legal correction', 2)
+    # Identical parsed values with different original bytes are new evidence too.
+    session, _ = stage(ingest, campaign, correction(original), 'reformatted', 2, b'\n  ')
+    preview = ingest.preview(session)
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE ingest_sources SET parsed='[]' WHERE session=?", (session,))
+    assert ingest.preview(session) == preview
+    assert ingest.publish(session)['revision'] == 3
+    assert ingest.publish(session)['reused']
+    assert repo.show(campaign)['current_review'] is None
+    assert repo.snapshot(campaign, run) == dict(before, superseded=True)
+    source = next(s for s in preview['input']['ingestion']['sources'] if s['kind'] == 'transfer_history')
+    assert source['text'].endswith('\n  ')
+
+
+def test_resolving_unknown_volume_cannot_clip_later_withdrawal(tmp_path):
+    path = tmp_path / 'physical.db'
+    repo, ingest = Repository(path), Ingestion(path)
+    campaign = repo.create('Unknown delivery', 'screening')['campaign']
+    original = evidence()
+    event = original['transfer_history']['events'][0]
+    event['status'] = 'unknown'
+    del event['volume'], event['volume_unit']
+    repo.import_data(campaign, original)
+    run = repo.run(campaign)['run']
+    repo.review(campaign, run, 'hold', 'Reviewer', 'Await measured volume', 1)
+    before = repo.show(campaign)
+    invalid = deepcopy(original)
+    invalid['transfer_history']['events'].append(dict(event, revision=2, status='ok', volume=8, volume_unit='uL'))
+    with pytest.raises(WorkbenchError, match='overdraws'):
+        repo.import_data(campaign, invalid)
+    assert repo.show(campaign) == before
+    session, states = stage(ingest, campaign, invalid, 'invalid', 1)
+    assert states['transfer_history']['state'] == 'rejected'
+    assert 'overdraws' in states['transfer_history']['diagnostics'][0]['error']
+    with pytest.raises(Conflict):
+        ingest.publish(session)
+    assert repo.show(campaign)['current_review'] == before['current_review']
+    legal = deepcopy(invalid)
+    legal['transfer_history']['events'][-1]['volume'] = 9
+    session, states = stage(ingest, campaign, legal, 'legal', 1)
+    assert all(s['state'] == 'accepted' for s in states.values())
+    assert ingest.publish(session)['revision'] == 2
+    assert repo.show(campaign)['current_review'] is None
+    result = repo.run(campaign)['analysis']
+    assert [o['dose_um'] for o in observations(result)] == pytest.approx([73, 73])
+
+
+def test_expired_worker_cannot_publish_after_correction(tmp_path, monkeypatch):
+    path = tmp_path / 'leases.db'
+    repo, jobs = Repository(path), Jobs(path)
+    campaign = repo.create('Lease fencing', 'screening')['campaign']
+    original = evidence()
+    repo.import_data(campaign, original)
+    job = jobs.submit(campaign)['job']
+    monkeypatch.setattr('truegate.jobs.time.time', lambda: 1000)
+    first = jobs.claim(job, 'first', 10)
+    jobs.compute(job, first['token'])
+    repo.import_data(campaign, correction(original))
+    monkeypatch.setattr('truegate.jobs.time.time', lambda: 1011)
+    second = jobs.claim(job, 'replacement', 10)
+    assert second['generation'] == first['generation'] + 1
+    for operation in [jobs.compute, jobs.publish, jobs.heartbeat]:
+        with pytest.raises(Conflict):
+            operation(job, first['token'])
+    with pytest.raises(Conflict, match='Compute'):
+        jobs.publish(job, second['token'])
+    jobs.compute(job, second['token'])
+    result = jobs.publish(job, second['token'])
+    assert repo.snapshot(campaign, result['run'])['analysis'] == analyze(original)
+    monkeypatch.setattr('truegate.jobs.time.time', lambda: 2000)
+    assert jobs.publish(job, second['token'])['run'] == result['run']
+# Retained screening incident
+
+Synthetic retained studies, deliveries, waiting work and historical results. Work on copies. Run `PYTHONPATH=src python examples/recovery-incident/check_consistency.py COPY.db` for partial read-only diagnostics. Inspect unresolved evidence rather than treating it as a successful repair.
+"""Inspect retained evidence and waiting-work consistency on a database copy.
+
+Run: PYTHONPATH=src python examples/recovery-incident/check_consistency.py COPY.db
+Read-only diagnostics; incomplete coverage, not an acceptance oracle.
+"""
+import json, sqlite3, sys
+from truegate.codec import loads, digest
+from truegate.ingest_resolution import assemble
+
+def inspect(path):
+    violations=[];unresolved=[]
+    with sqlite3.connect('file:'+str(path)+'?mode=ro',uri=True) as db:
+        db.row_factory=sqlite3.Row
+        for campaign, in db.execute('SELECT id FROM campaigns ORDER BY id'):
+            events=[dict(r) for r in db.execute('SELECT * FROM events WHERE campaign=? ORDER BY id',(campaign,))]
+            deliveries=[];local=[]
+            try:
+                publications=[e['id'] for e in events if e['action']=='ingest_published']
+                if publications and any(e['action']=='imported' and e['id']>max(publications) for e in events):
+                    raise ValueError('Later direct input requires review')
+                for e in events:
+                    if e['action']!='ingest_published':continue
+                    sid=loads(e['payload'])['session']
+                    session=db.execute('SELECT * FROM ingest_sessions WHERE id=?',(sid,)).fetchone()
+                    manifest=loads(session['manifest'])
+                    sources=[dict(r) for r in db.execute('SELECT * FROM ingest_sources WHERE session=?',(sid,))]
+                    content=assemble(manifest,sources)
+                    for descriptor in manifest['sources']:
+                        if descriptor['kind']=='transfer_history':
+                            model=loads(bytes(next(s for s in sources if s['source_id']==descriptor['id'])['raw']).decode('utf-8-sig'))
+                            codec=descriptor.get('codec','transfer-history/2')
+                            if codec=='transfer-history/1':
+                                for binding in model['bindings']:binding['sequence']-=1
+                            elif codec!='transfer-history/2':raise ValueError('Unsupported retained format')
+                            content['transfer_history']=model
+                    sha=digest(content)
+                    linked=db.execute('SELECT sha FROM datasets WHERE id=?',(session['published_dataset'],)).fetchone()
+                    deliveries.append((e['id'],sid,sha))
+                    if linked is None or linked['sha']!=sha:local.append(dict(campaign=campaign,session=sid,check='retained-input-binding'))
+                for job in db.execute("SELECT * FROM jobs WHERE campaign=? AND state='queued'",(campaign,)):
+                    submitted=[e for e in events if e['action']=='job_submitted' and loads(e['payload']).get('job')==job['id']]
+                    if len(submitted)!=1:raise ValueError('Ambiguous submission context')
+                    prior=[d for d in deliveries if d[0]<submitted[0]['id']]
+                    if prior:
+                        row=db.execute('SELECT sha FROM datasets WHERE id=?',(job['dataset'],)).fetchone()
+                        if not row or row['sha']!=prior[-1][2]:local.append(dict(campaign=campaign,job=job['id'],check='waiting-input-context'))
+                violations.extend(local)
+            except Exception as exc:
+                unresolved.append(dict(campaign=campaign,error=str(exc)))
+    return dict(violations=violations,unresolved=unresolved,scope='Partial read-only consistency diagnostics; unresolved evidence requires review')
+if __name__=='__main__':
+    report=inspect(sys.argv[1]);print(json.dumps(report,indent=2));sys.exit(bool(report['violations']))
+"""Surface an intake discrepancy without modifying the supplied evidence."""
+from pathlib import Path
+import json
+import shutil
+import sqlite3
+import sys
+from truegate.recovery import recover
+HERE=Path(__file__).resolve().parent
+
+def main():
+    out=Path(sys.argv[1]);out.mkdir(parents=True,exist_ok=False)
+    path=out/'study.db';shutil.copyfile(HERE/'study.db',path)
+    cid=json.loads((HERE/'example.json').read_text())['campaign']
+    with sqlite3.connect(path) as db:
+        datasets=db.execute('SELECT COUNT(*) FROM datasets WHERE campaign=?',(cid,)).fetchone()[0]
+        deliveries=db.execute("SELECT COUNT(*) FROM ingest_sessions WHERE campaign=? AND state='published'",(cid,)).fetchone()[0]
+        links=[r[0] for r in db.execute("SELECT published_dataset FROM ingest_sessions WHERE campaign=? AND state='published' ORDER BY id",(cid,))]
+    report=recover(path,dry_run=True)
+    print(json.dumps({'campaign':cid,'published_deliveries':deliveries,'stored_datasets':datasets,
+                      'distinct_linked_datasets':len(set(links)),
+                      'recovery_preview':next(e for e in report['studies'] if e['campaign']==cid)},indent=2))
+
+if __name__=='__main__':main()

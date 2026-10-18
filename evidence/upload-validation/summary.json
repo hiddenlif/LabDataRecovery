@@ -1,0 +1,6 @@
+{
+  "application_tests": 43,
+  "reference_checks": 185,
+  "reference_passed": 185,
+  "scope": "Actual standalone-package validation on Linux ARM64; CI has its own execution and status."
+}

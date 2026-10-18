@@ -1,0 +1,51 @@
+{
+  "current-parser-only": {
+    "passed": 6,
+    "failures": 2,
+    "errors": 0,
+    "accepted": false,
+    "image_id": "sha256:9dec6eb849620f3733cf8de129dd37d7399e3934480bbcfdbddeb7b3dd7644ff"
+  },
+  "skip-prior": {
+    "passed": 6,
+    "failures": 2,
+    "errors": 0,
+    "accepted": false,
+    "image_id": "sha256:9dec6eb849620f3733cf8de129dd37d7399e3934480bbcfdbddeb7b3dd7644ff"
+  },
+  "duplicate-prior": {
+    "passed": 7,
+    "failures": 1,
+    "errors": 0,
+    "accepted": false,
+    "image_id": "sha256:9dec6eb849620f3733cf8de129dd37d7399e3934480bbcfdbddeb7b3dd7644ff"
+  },
+  "revision-current": {
+    "passed": 6,
+    "failures": 2,
+    "errors": 0,
+    "accepted": false,
+    "image_id": "sha256:9dec6eb849620f3733cf8de129dd37d7399e3934480bbcfdbddeb7b3dd7644ff"
+  },
+  "timestamp-order": {
+    "passed": 5,
+    "failures": 3,
+    "errors": 0,
+    "accepted": false,
+    "image_id": "sha256:9dec6eb849620f3733cf8de129dd37d7399e3934480bbcfdbddeb7b3dd7644ff"
+  },
+  "alternative-ids": {
+    "passed": 8,
+    "failures": 0,
+    "errors": 0,
+    "accepted": true,
+    "image_id": "sha256:9dec6eb849620f3733cf8de129dd37d7399e3934480bbcfdbddeb7b3dd7644ff"
+  },
+  "live-only": {
+    "passed": 3,
+    "failures": 5,
+    "errors": 0,
+    "accepted": false,
+    "image_id": "sha256:9dec6eb849620f3733cf8de129dd37d7399e3934480bbcfdbddeb7b3dd7644ff"
+  }
+}

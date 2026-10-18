@@ -1,0 +1,8 @@
+src/truegate/repository.py:98:            old = db.execute("SELECT * FROM runs WHERE campaign=? AND dataset=? AND policy_sha=? AND engine=?",
+src/truegate/repository.py:134:            if result["dataset"] != latest["id"] or expected_revision != db.execute("SELECT MAX(revision) FROM datasets WHERE campaign=?", (campaign,)).fetchone()[0]:
+src/truegate/repository.py:152:                         current_revision=datasets[-1]["revision"] if datasets else None,
+src/truegate/jobs.py:35:            row = db.execute("SELECT id FROM jobs WHERE campaign=? AND dataset=? AND policy_sha=? AND engine=?",
+src/truegate/jobs.py:106:            existing = db.execute("SELECT * FROM runs WHERE campaign=? AND dataset=? AND policy_sha=? AND engine=?",
+-rw-r--r-- 1 501 dialout 7.6K Oct 18 21:04 RECOVERY-NOTES.md
+-rw-r--r-- 1 501 dialout  39K Oct 18 21:04 recovery-report/validation.json
+-rwxr-xr-x 1 501 dialout 4.8K Oct 18 21:04 scripts/recover_incident.py

@@ -1,0 +1,7 @@
+{
+  "candidate": true,
+  "reference": true,
+  "checks": true,
+  "corrected_checks": true,
+  "r3_review_preserved": true
+}

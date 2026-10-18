@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "truegate-workbench"
+version = "0.1.0"
+description = "Traceable scientific analysis and review for screening and assay studies"
+requires-python = ">=3.12"
+dependencies = ["numpy==2.5.2", "scipy==1.18.0"]
+
+[project.scripts]
+truegate = "truegate.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9,<10"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/truegate"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

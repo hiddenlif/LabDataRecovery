@@ -1,0 +1,40 @@
+name: Validate application and task
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: validate-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify packaged files
+        run: python3 tools/verify_files.py
+      - name: Build pinned verifier image
+        run: python3 tools/build_verifier.py
+      - name: Test maintained application without network or root privileges
+        run: python3 tools/test_application.py
+      - name: Build application image
+        run: docker build -t truegate-screening:ci application
+      - name: Evaluate complete reference
+        run: python3 validation/evaluate.py reference --checks 11r4-full --output local-runs/reference
+      - name: Produce and verify functional grade
+        run: |
+          python3 validation/grade_attempt.py 11-transfer-history-reconstruction local-runs/reference --inventory validation/runtime-inventory.local.json --output local-runs/reference-grade.json
+          python3 -c "import json; r=json.load(open('local-runs/reference-grade.json')); assert r['evidence_consistent'] and r['functional_completion']=='passed'"
+      - name: Retain actual validation receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: validation-receipts
+          path: local-runs/
+          if-no-files-found: warn
+          retention-days: 7

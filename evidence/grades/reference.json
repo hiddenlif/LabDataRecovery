@@ -1,0 +1,442 @@
+{
+  "task": "11-transfer-history-reconstruction",
+  "evidence_consistent": true,
+  "functional_completion": "passed",
+  "criteria": [
+    {
+      "id": "11-A",
+      "requirement": "Resolve physical operations and corrected evidence without duplication",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_13_transfers::test_duplicate_export_is_not_an_additional_physical_transfer",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_failed_topup_does_not_undo_delivered_liquid[failed]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_failed_topup_does_not_undo_delivered_liquid[cancelled]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_large_operation_ordinals_do_not_round_through_float",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-B",
+      "requirement": "Conserve each solute and bind contents at the correct physical step",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_13_transfers::test_generated_histories_match_exact_rational_ledger[17]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_generated_histories_match_exact_rational_ledger[41]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_generated_histories_match_exact_rational_ledger[113]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_generated_histories_match_exact_rational_ledger[307]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_generated_histories_match_exact_rational_ledger[701]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_binding_time_and_transitive_correction",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_unit_changes_and_temporal_return_transfers",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-C",
+      "requirement": "Reject malformed evidence and propagate unresolved physical contents",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[obsolete_conflict]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[change_identity]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[duplicate_sequence]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[unknown_vessel]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[overdraw]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[boolean_sequence]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[float_revision]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[negative_volume]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[unknown_with_volume]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[zero_success]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[nonzero_failure]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[duplicate_binding]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[control_binding]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[duplicate_vessel]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[binding_future]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[overflow]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[empty_solute]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_invalid_history_rejected_before_storage[nonlist_events]",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_unknown_contents_propagate_only_along_delivered_paths_and_can_be_corrected",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-D",
+      "requirement": "Carry physical doses through fits, plate eligibility and uncertainty checks",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_13_transfers::test_reconstructed_doses_reach_fits_and_plate_modes",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_legacy_plates_and_uncertainty_cannot_override_contents",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-E",
+      "requirement": "Preserve campaign-local evidence and additive canonical solutes",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_13_transfers::test_campaign_local_histories_survive_canonical_identity",
+          "status": "passed"
+        },
+        {
+          "case": "test_13_transfers::test_aliases_of_one_solute_add_without_losing_mass",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-F",
+      "requirement": "Pin jobs and preserve corrected versus historical review/report evidence",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_13_transfers::test_pinned_jobs_current_reviews_and_historical_report",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-G",
+      "requirement": "Stage exact source bytes and publish atomically across interruption",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_13_transfers::test_instrument_history_bytes_publish_atomically_and_ignore_parsed_cache",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-H",
+      "requirement": "Changed evidence requires a new revision and review; exact repeats preserve identity",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_14_corrections::test_equal_doses_do_not_reuse_changed_evidence_or_review[20-15]",
+          "status": "passed"
+        },
+        {
+          "case": "test_14_corrections::test_equal_doses_do_not_reuse_changed_evidence_or_review[26-18]",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-I",
+      "requirement": "Computed and staged jobs retain their submission evidence across equal-dose corrections",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_14_corrections::test_queued_compute_keeps_the_original_equal_dose_history",
+          "status": "passed"
+        },
+        {
+          "case": "test_14_corrections::test_a_precomputed_job_stays_publishable_after_an_equal_dose_correction",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-J",
+      "requirement": "Historical publication remains idempotent and does not displace current review",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_14_corrections::test_delayed_publication_reuses_pinned_run_without_displacing_current_review",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-K",
+      "requirement": "Historical snapshots retain complete original results and exported physical provenance",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_14_corrections::test_historical_exports_retain_the_complete_previous_result",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-L",
+      "requirement": "Cross-source validation rejects contradictions while a legal counterpart publishes",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_14_corrections::test_source_acceptance_and_complete_delivery_identity_are_distinct",
+          "status": "passed"
+        },
+        {
+          "case": "test_14_corrections::test_unknown_evidence_and_resolved_overdraw_follow_different_paths",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-M",
+      "requirement": "Scheduler deduplication includes dataset identity",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_15_recovery_migration::test_scheduler_submission_identity_includes_the_dataset",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-N",
+      "requirement": "Per-well evidence retains every equal-dose record across HTML and CSV",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_15_recovery_migration::test_equal_dose_records_are_not_aggregated_in_evidence_exports",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-O",
+      "requirement": "Read-only recovery planning distinguishes affected, blocked and healthy studies",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_15_recovery_migration::test_dry_run_identifies_recoverable_blocked_and_healthy_without_writes",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-P",
+      "requirement": "Recovery appends correct ordered revisions while preserving original work",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_15_recovery_migration::test_apply_recovers_ordered_revisions_and_preserves_original_work",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-Q",
+      "requirement": "Recovery is idempotent and uses authoritative source and event evidence",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_15_recovery_migration::test_recovery_is_idempotent_and_reported_mappings_remain_consistent",
+          "status": "passed"
+        },
+        {
+          "case": "test_15_recovery_migration::test_cached_parses_and_row_enumeration_order_are_not_recovery_evidence",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-R",
+      "requirement": "A consistent new backup precedes an atomic, retryable apply",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_15_recovery_migration::test_apply_refuses_missing_or_existing_backup_without_mutation",
+          "status": "passed"
+        },
+        {
+          "case": "test_15_recovery_migration::test_recovery_interruption_rolls_back_all_changes_and_retains_backup",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-S",
+      "requirement": "Queued work recovers to its own publication epoch while staged work is preserved",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_15_recovery_migration::test_recovered_queued_jobs_use_their_own_publication_epoch",
+          "status": "passed"
+        },
+        {
+          "case": "test_15_recovery_migration::test_apply_recovers_ordered_revisions_and_preserves_original_work",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "id": "11-R4",
+      "requirement": "Decode retained formats, adopt valid partial progress, and preserve current-evidence workflows",
+      "status": "passed",
+      "missing_checks": [],
+      "cases": [
+        {
+          "case": "test_16_recovery_evolution::test_recovery_history_semantics[legacy]",
+          "status": "passed"
+        },
+        {
+          "case": "test_16_recovery_evolution::test_recovery_history_semantics[partial]",
+          "status": "passed"
+        },
+        {
+          "case": "test_16_recovery_evolution::test_recovery_history_semantics[mixed]",
+          "status": "passed"
+        },
+        {
+          "case": "test_16_recovery_evolution::test_recovery_history_semantics[unknown_codec]",
+          "status": "passed"
+        },
+        {
+          "case": "test_16_recovery_evolution::test_repeat_adopts_partial_progress_without_new_changes",
+          "status": "passed"
+        },
+        {
+          "case": "test_16_recovery_evolution::test_evolution_preserves_all_preexisting_evidence_and_worker_state",
+          "status": "passed"
+        },
+        {
+          "case": "test_16_recovery_evolution::test_evolution_dry_run_backup_and_plan_consistency",
+          "status": "passed"
+        },
+        {
+          "case": "test_16_recovery_evolution::test_mixed_history_refresh_analyze_review_and_subsequent_import",
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "regression": {
+    "passed": 185,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "complete_inventory": true
+  },
+  "manual_review": {
+    "status": "not_reviewed",
+    "items": [
+      "Explain the distinction between an additional physical operation and a correction.",
+      "Review meaningful added regression tests and physical-model assumptions.",
+      "Inspect maintainability, compatibility and provenance preservation.",
+      "Confirm reported results and unresolved limitations match actual execution evidence.",
+      "Review RECOVERY-NOTES.md against the actual report and database; do not grade preferred wording.",
+      "Separate source-data ambiguity from recoverable suppression; never claim missing history was restored."
+    ]
+  },
+  "maintainer_acceptance": "not_established_until_manual_review",
+  "difficulty": "not_inferred_from_this_receipt",
+  "receipt_binding": {
+    "result.json": "89a58684b98bbbda538cd280922d2075ab21a187805411d70e51615683b38b91",
+    "junit.xml": "615666a3aa2399653110304a19e283a30d0d27369aaa5b8335369fc739b6bb5f"
+  },
+  "inventory_sha256": "14f1a6f6e73184c7a5706cd595aa7d55db2d1b58eb622ae94d73419c79b2431e",
+  "rubric_sha256": "6c44eafa215d5bae0146f9ef6da672d4ec74739d5a9e8b23ca44509d7cedcff1",
+  "limit": "Author-side evidence summarizer, not a signature or protection against edited host receipts. Inspect execution logs before attributing failures to a solver."
+}

@@ -1,0 +1,4 @@
+/workspace
+ISSUE.md
+TASK_ENVIRONMENT.md
+pyproject.toml

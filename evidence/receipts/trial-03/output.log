@@ -1,0 +1,266 @@
+........................................................................ [ 38%]
+........................................................................ [ 77%]
+..........................FFFF.FF........                                [100%]
+=================================== FAILURES ===================================
+____ test_dry_run_identifies_recoverable_blocked_and_healthy_without_writes ____
+
+client = <conftest.Client object at 0xffffae077890>
+
+    def test_dry_run_identifies_recoverable_blocked_and_healthy_without_writes(client):
+        setup(client);before=Path(client.db).read_bytes()
+        result=command(client,dry=True)
+        assert result['mode']=='dry_run' and result['backup'] is None
+>       check_plan(result)
+
+test_15_recovery_migration.py:147: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+report = {'backup': None, 'mode': 'dry_run', 'studies': [{'campaign': '09ac813ba8cb4ac7bb990b8f4f0c4f82', 'decisions': [], 'job...d7e0bf6eb4bdc9f48ba3dbd775157', 'decisions': [], 'jobs': [], 'runs': [], ...}, ...], 'version': 'transfer-evidence-v1'}
+applied = False
+
+    def check_plan(report,applied=False):
+        by=entries(report)
+        for case in ORACLE['cases']:
+            e=by[case['campaign']]
+            blocked=case['blocked'] and not (case['kind']=='later_direct' and e['status'] in {'recoverable','recovered'})
+            expected='blocked' if blocked else ('recovered' if applied else 'recoverable') if case['sessions'] else 'unaffected'
+            assert e['status']==expected,(case['campaign'],case['kind'],e)
+            assert {s['session'] for s in e['sessions']}==(set(case['sessions']) if not blocked else set())
+            assert {j['job'] for j in e['jobs']}==({j['job'] for j in case['repin']} if not blocked else set())
+            if not blocked:
+                session_map={s['session']:s['to_dataset'] for s in e['sessions']}
+                job_map={j['job']:j['to_dataset'] for j in e['jobs']}
+                for intended in case['repin']:assert job_map[intended['job']]==session_map[intended['session']]
+            assert bool(e['unresolved'])==blocked
+            expected_runs=[r for r in ORACLE['original']['runs'] if r['campaign']==case['campaign']]
+            expected_decisions=[d for d in ORACLE['original']['decisions'] if d['campaign']==case['campaign']]
+>           assert {(r['run'],r['dataset'],r['action']) for r in e['runs']}=={(r['id'],r['dataset'],'preserved') for r in expected_runs}
+E           AssertionError: assert set() == {('18171003a3... 'preserved')}
+E             
+E             Extra items in the right set:
+E             ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')
+E             Use -v to get more diff
+
+test_15_recovery_migration.py:65: AssertionError
+______ test_apply_recovers_ordered_revisions_and_preserves_original_work _______
+
+client = <conftest.Client object at 0xffffad98b050>
+
+    def test_apply_recovers_ordered_revisions_and_preserves_original_work(client):
+        setup(client);before=state(client.db);planned=command(client,dry=True)
+        backup=client.directory/'pre-recovery.db';applied=command(client,backup=backup)
+>       assert_apply(client,before,applied)
+
+test_15_recovery_migration.py:154: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test_15_recovery_migration.py:71: in assert_apply
+    by=check_plan(report,True);after=state(client.db)
+       ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+report = {'backup': '/tmp/truegate-check-vlxm6u4p/pre-recovery.db', 'mode': 'apply', 'studies': [{'campaign': '09ac813ba8cb4ac7...d7e0bf6eb4bdc9f48ba3dbd775157', 'decisions': [], 'jobs': [], 'runs': [], ...}, ...], 'version': 'transfer-evidence-v1'}
+applied = True
+
+    def check_plan(report,applied=False):
+        by=entries(report)
+        for case in ORACLE['cases']:
+            e=by[case['campaign']]
+            blocked=case['blocked'] and not (case['kind']=='later_direct' and e['status'] in {'recoverable','recovered'})
+            expected='blocked' if blocked else ('recovered' if applied else 'recoverable') if case['sessions'] else 'unaffected'
+            assert e['status']==expected,(case['campaign'],case['kind'],e)
+            assert {s['session'] for s in e['sessions']}==(set(case['sessions']) if not blocked else set())
+            assert {j['job'] for j in e['jobs']}==({j['job'] for j in case['repin']} if not blocked else set())
+            if not blocked:
+                session_map={s['session']:s['to_dataset'] for s in e['sessions']}
+                job_map={j['job']:j['to_dataset'] for j in e['jobs']}
+                for intended in case['repin']:assert job_map[intended['job']]==session_map[intended['session']]
+            assert bool(e['unresolved'])==blocked
+            expected_runs=[r for r in ORACLE['original']['runs'] if r['campaign']==case['campaign']]
+            expected_decisions=[d for d in ORACLE['original']['decisions'] if d['campaign']==case['campaign']]
+>           assert {(r['run'],r['dataset'],r['action']) for r in e['runs']}=={(r['id'],r['dataset'],'preserved') for r in expected_runs}
+E           AssertionError: assert set() == {('18171003a3... 'preserved')}
+E             
+E             Extra items in the right set:
+E             ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')
+E             Use -v to get more diff
+
+test_15_recovery_migration.py:65: AssertionError
+_____ test_recovery_is_idempotent_and_reported_mappings_remain_consistent ______
+
+client = <conftest.Client object at 0xffffad98b7d0>
+
+    def test_recovery_is_idempotent_and_reported_mappings_remain_consistent(client):
+        setup(client);first=command(client,backup=client.directory/'first-backup.db')
+>       check_plan(first,True);before=state(client.db)
+        ^^^^^^^^^^^^^^^^^^^^^^
+
+test_15_recovery_migration.py:166: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+report = {'backup': '/tmp/truegate-check-33wlxnox/first-backup.db', 'mode': 'apply', 'studies': [{'campaign': '09ac813ba8cb4ac7...d7e0bf6eb4bdc9f48ba3dbd775157', 'decisions': [], 'jobs': [], 'runs': [], ...}, ...], 'version': 'transfer-evidence-v1'}
+applied = True
+
+    def check_plan(report,applied=False):
+        by=entries(report)
+        for case in ORACLE['cases']:
+            e=by[case['campaign']]
+            blocked=case['blocked'] and not (case['kind']=='later_direct' and e['status'] in {'recoverable','recovered'})
+            expected='blocked' if blocked else ('recovered' if applied else 'recoverable') if case['sessions'] else 'unaffected'
+            assert e['status']==expected,(case['campaign'],case['kind'],e)
+            assert {s['session'] for s in e['sessions']}==(set(case['sessions']) if not blocked else set())
+            assert {j['job'] for j in e['jobs']}==({j['job'] for j in case['repin']} if not blocked else set())
+            if not blocked:
+                session_map={s['session']:s['to_dataset'] for s in e['sessions']}
+                job_map={j['job']:j['to_dataset'] for j in e['jobs']}
+                for intended in case['repin']:assert job_map[intended['job']]==session_map[intended['session']]
+            assert bool(e['unresolved'])==blocked
+            expected_runs=[r for r in ORACLE['original']['runs'] if r['campaign']==case['campaign']]
+            expected_decisions=[d for d in ORACLE['original']['decisions'] if d['campaign']==case['campaign']]
+>           assert {(r['run'],r['dataset'],r['action']) for r in e['runs']}=={(r['id'],r['dataset'],'preserved') for r in expected_runs}
+E           AssertionError: assert set() == {('18171003a3... 'preserved')}
+E             
+E             Extra items in the right set:
+E             ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')
+E             Use -v to get more diff
+
+test_15_recovery_migration.py:65: AssertionError
+____ test_cached_parses_and_row_enumeration_order_are_not_recovery_evidence ____
+
+client = <conftest.Client object at 0xffffad98bc50>
+
+    def test_cached_parses_and_row_enumeration_order_are_not_recovery_evidence(client):
+        setup(client)
+        client.sql("UPDATE ingest_sources SET parsed='[]'")
+        client.sql("UPDATE events SET created='unreliable-time'")
+        before=state(client.db)
+        result=command(client,backup=client.directory/'backup.db')
+>       assert_apply(client,before,result)
+
+test_15_recovery_migration.py:185: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test_15_recovery_migration.py:71: in assert_apply
+    by=check_plan(report,True);after=state(client.db)
+       ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+report = {'backup': '/tmp/truegate-check-zntbrc1w/backup.db', 'mode': 'apply', 'studies': [{'campaign': '09ac813ba8cb4ac7bb990b...d7e0bf6eb4bdc9f48ba3dbd775157', 'decisions': [], 'jobs': [], 'runs': [], ...}, ...], 'version': 'transfer-evidence-v1'}
+applied = True
+
+    def check_plan(report,applied=False):
+        by=entries(report)
+        for case in ORACLE['cases']:
+            e=by[case['campaign']]
+            blocked=case['blocked'] and not (case['kind']=='later_direct' and e['status'] in {'recoverable','recovered'})
+            expected='blocked' if blocked else ('recovered' if applied else 'recoverable') if case['sessions'] else 'unaffected'
+            assert e['status']==expected,(case['campaign'],case['kind'],e)
+            assert {s['session'] for s in e['sessions']}==(set(case['sessions']) if not blocked else set())
+            assert {j['job'] for j in e['jobs']}==({j['job'] for j in case['repin']} if not blocked else set())
+            if not blocked:
+                session_map={s['session']:s['to_dataset'] for s in e['sessions']}
+                job_map={j['job']:j['to_dataset'] for j in e['jobs']}
+                for intended in case['repin']:assert job_map[intended['job']]==session_map[intended['session']]
+            assert bool(e['unresolved'])==blocked
+            expected_runs=[r for r in ORACLE['original']['runs'] if r['campaign']==case['campaign']]
+            expected_decisions=[d for d in ORACLE['original']['decisions'] if d['campaign']==case['campaign']]
+>           assert {(r['run'],r['dataset'],r['action']) for r in e['runs']}=={(r['id'],r['dataset'],'preserved') for r in expected_runs}
+E           AssertionError: assert set() == {('18171003a3... 'preserved')}
+E             
+E             Extra items in the right set:
+E             ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')
+E             Use -v to get more diff
+
+test_15_recovery_migration.py:65: AssertionError
+_____ test_recovery_interruption_rolls_back_all_changes_and_retains_backup _____
+
+client = <conftest.Client object at 0xffffbb837110>
+
+    def test_recovery_interruption_rolls_back_all_changes_and_retains_backup(client):
+        setup(client)
+        client.sql("CREATE TRIGGER recovery_stop BEFORE INSERT ON datasets BEGIN SELECT RAISE(ABORT,'controlled recovery interruption'); END")
+        before=state(client.db);backup=client.directory/'backup.db'
+        command(client,backup=backup,ok=False)
+        assert backup.is_file() and state(client.db)==before
+        assert state(backup)==before
+        client.sql('DROP TRIGGER recovery_stop')
+>       assert_apply(client,before,command(client,backup=client.directory/'retry-backup.db'))
+
+test_15_recovery_migration.py:204: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+test_15_recovery_migration.py:71: in assert_apply
+    by=check_plan(report,True);after=state(client.db)
+       ^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+report = {'backup': '/tmp/truegate-check-kfult481/retry-backup.db', 'mode': 'apply', 'studies': [{'campaign': '09ac813ba8cb4ac7...d7e0bf6eb4bdc9f48ba3dbd775157', 'decisions': [], 'jobs': [], 'runs': [], ...}, ...], 'version': 'transfer-evidence-v1'}
+applied = True
+
+    def check_plan(report,applied=False):
+        by=entries(report)
+        for case in ORACLE['cases']:
+            e=by[case['campaign']]
+            blocked=case['blocked'] and not (case['kind']=='later_direct' and e['status'] in {'recoverable','recovered'})
+            expected='blocked' if blocked else ('recovered' if applied else 'recoverable') if case['sessions'] else 'unaffected'
+            assert e['status']==expected,(case['campaign'],case['kind'],e)
+            assert {s['session'] for s in e['sessions']}==(set(case['sessions']) if not blocked else set())
+            assert {j['job'] for j in e['jobs']}==({j['job'] for j in case['repin']} if not blocked else set())
+            if not blocked:
+                session_map={s['session']:s['to_dataset'] for s in e['sessions']}
+                job_map={j['job']:j['to_dataset'] for j in e['jobs']}
+                for intended in case['repin']:assert job_map[intended['job']]==session_map[intended['session']]
+            assert bool(e['unresolved'])==blocked
+            expected_runs=[r for r in ORACLE['original']['runs'] if r['campaign']==case['campaign']]
+            expected_decisions=[d for d in ORACLE['original']['decisions'] if d['campaign']==case['campaign']]
+>           assert {(r['run'],r['dataset'],r['action']) for r in e['runs']}=={(r['id'],r['dataset'],'preserved') for r in expected_runs}
+E           AssertionError: assert set() == {('18171003a3... 'preserved')}
+E             
+E             Extra items in the right set:
+E             ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')
+E             Use -v to get more diff
+
+test_15_recovery_migration.py:65: AssertionError
+__________ test_recovered_queued_jobs_use_their_own_publication_epoch __________
+
+client = <conftest.Client object at 0xffffad98a630>
+
+    def test_recovered_queued_jobs_use_their_own_publication_epoch(client):
+>       setup(client);report=command(client,backup=client.directory/'backup.db');check_plan(report,True)
+                                                                                 ^^^^^^^^^^^^^^^^^^^^^^^
+
+test_15_recovery_migration.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+report = {'backup': '/tmp/truegate-check-tfzsx7nr/backup.db', 'mode': 'apply', 'studies': [{'campaign': '09ac813ba8cb4ac7bb990b...d7e0bf6eb4bdc9f48ba3dbd775157', 'decisions': [], 'jobs': [], 'runs': [], ...}, ...], 'version': 'transfer-evidence-v1'}
+applied = True
+
+    def check_plan(report,applied=False):
+        by=entries(report)
+        for case in ORACLE['cases']:
+            e=by[case['campaign']]
+            blocked=case['blocked'] and not (case['kind']=='later_direct' and e['status'] in {'recoverable','recovered'})
+            expected='blocked' if blocked else ('recovered' if applied else 'recoverable') if case['sessions'] else 'unaffected'
+            assert e['status']==expected,(case['campaign'],case['kind'],e)
+            assert {s['session'] for s in e['sessions']}==(set(case['sessions']) if not blocked else set())
+            assert {j['job'] for j in e['jobs']}==({j['job'] for j in case['repin']} if not blocked else set())
+            if not blocked:
+                session_map={s['session']:s['to_dataset'] for s in e['sessions']}
+                job_map={j['job']:j['to_dataset'] for j in e['jobs']}
+                for intended in case['repin']:assert job_map[intended['job']]==session_map[intended['session']]
+            assert bool(e['unresolved'])==blocked
+            expected_runs=[r for r in ORACLE['original']['runs'] if r['campaign']==case['campaign']]
+            expected_decisions=[d for d in ORACLE['original']['decisions'] if d['campaign']==case['campaign']]
+>           assert {(r['run'],r['dataset'],r['action']) for r in e['runs']}=={(r['id'],r['dataset'],'preserved') for r in expected_runs}
+E           AssertionError: assert set() == {('18171003a3... 'preserved')}
+E             
+E             Extra items in the right set:
+E             ('18171003a3de4a6c9f078659c931efd4', 'ba6518a36c744ab69f1901195e813b56', 'preserved')
+E             Use -v to get more diff
+
+test_15_recovery_migration.py:65: AssertionError
+=========================== short test summary info ============================
+FAILED test_15_recovery_migration.py::test_dry_run_identifies_recoverable_blocked_and_healthy_without_writes
+FAILED test_15_recovery_migration.py::test_apply_recovers_ordered_revisions_and_preserves_original_work
+FAILED test_15_recovery_migration.py::test_recovery_is_idempotent_and_reported_mappings_remain_consistent
+FAILED test_15_recovery_migration.py::test_cached_parses_and_row_enumeration_order_are_not_recovery_evidence
+FAILED test_15_recovery_migration.py::test_recovery_interruption_rolls_back_all_changes_and_retains_backup
+FAILED test_15_recovery_migration.py::test_recovered_queued_jobs_use_their_own_publication_epoch
+6 failed, 179 passed in 254.09s (0:04:14)

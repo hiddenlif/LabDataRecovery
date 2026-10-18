@@ -1,0 +1,146 @@
+FFFFF...                                                                 [100%]
+=================================== FAILURES ===================================
+___________________ test_recovery_history_semantics[legacy] ____________________
+
+client = <conftest.Client object at 0xffff923ee270>, kind = 'legacy'
+
+    @pytest.mark.parametrize('kind',['legacy','partial','mixed','unknown_codec'])
+>   def test_recovery_history_semantics(client,kind):verify(client,kind)
+                                                     ^^^^^^^^^^^^^^^^^^^
+
+test_16_recovery_evolution.py:49: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+client = <conftest.Client object at 0xffff923ee270>, kind = 'legacy'
+
+    def verify(client,kind):
+        before=setup(client);report=apply(client);entries={e['campaign']:e for e in report['studies']}
+        after=state(client.db);datasets={r['id']:r for r in after['datasets']};sessions={r['id']:r for r in after['ingest_sessions']};jobs={r['id']:r for r in after['jobs']}
+        for case in O['cases']:
+            if case['kind']!=kind:continue
+            cid=case['campaign'];entry=entries[cid]
+            if case['blocked']:
+                assert entry['status']=='blocked' and entry['unresolved']
+                for table in ['datasets','jobs','ingest_sessions','events']:
+                    assert canonical([r for r in before[table] if r.get('campaign')==cid])==canonical([r for r in after[table] if r.get('campaign')==cid])
+                continue
+>           assert entry['status']=='recovered',entry
+E           AssertionError: {'campaign': '8f237fd8db3342ac894379199d09f675', 'decisions': [{'action': 'preserved', 'decision': 41, 'run': '4ea4cb8...'action': 'preserved', 'dataset': '874051880f284878bc9c7da3eb49446b', 'run': '4ea4cb837eda42698e67fa98ecda7f27'}], ...}
+E           assert 'unaffected' == 'recovered'
+E             
+E             - recovered
+E             + unaffected
+
+test_16_recovery_evolution.py:30: AssertionError
+___________________ test_recovery_history_semantics[partial] ___________________
+
+client = <conftest.Client object at 0xffff9246ed50>, kind = 'partial'
+
+    @pytest.mark.parametrize('kind',['legacy','partial','mixed','unknown_codec'])
+>   def test_recovery_history_semantics(client,kind):verify(client,kind)
+                                                     ^^^^^^^^^^^^^^^^^^^
+
+test_16_recovery_evolution.py:49: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+client = <conftest.Client object at 0xffff9246ed50>, kind = 'partial'
+
+    def verify(client,kind):
+        before=setup(client);report=apply(client);entries={e['campaign']:e for e in report['studies']}
+        after=state(client.db);datasets={r['id']:r for r in after['datasets']};sessions={r['id']:r for r in after['ingest_sessions']};jobs={r['id']:r for r in after['jobs']}
+        for case in O['cases']:
+            if case['kind']!=kind:continue
+            cid=case['campaign'];entry=entries[cid]
+            if case['blocked']:
+                assert entry['status']=='blocked' and entry['unresolved']
+                for table in ['datasets','jobs','ingest_sessions','events']:
+                    assert canonical([r for r in before[table] if r.get('campaign')==cid])==canonical([r for r in after[table] if r.get('campaign')==cid])
+                continue
+>           assert entry['status']=='recovered',entry
+E           AssertionError: {'campaign': '8c712b9e6c4549d4a9111e8b11945e7c', 'decisions': [{'action': 'preserved', 'decision': 45, 'run': '6d6d005...'action': 'preserved', 'dataset': '67a84ffad6b64222842943c50b3aa651', 'run': '6d6d005a691746c0a2717f8f7d77072f'}], ...}
+E           assert 'unaffected' == 'recovered'
+E             
+E             - recovered
+E             + unaffected
+
+test_16_recovery_evolution.py:30: AssertionError
+____________________ test_recovery_history_semantics[mixed] ____________________
+
+client = <conftest.Client object at 0xffff9246e5d0>, kind = 'mixed'
+
+    @pytest.mark.parametrize('kind',['legacy','partial','mixed','unknown_codec'])
+>   def test_recovery_history_semantics(client,kind):verify(client,kind)
+                                                     ^^^^^^^^^^^^^^^^^^^
+
+test_16_recovery_evolution.py:49: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+client = <conftest.Client object at 0xffff9246e5d0>, kind = 'mixed'
+
+    def verify(client,kind):
+        before=setup(client);report=apply(client);entries={e['campaign']:e for e in report['studies']}
+        after=state(client.db);datasets={r['id']:r for r in after['datasets']};sessions={r['id']:r for r in after['ingest_sessions']};jobs={r['id']:r for r in after['jobs']}
+        for case in O['cases']:
+            if case['kind']!=kind:continue
+            cid=case['campaign'];entry=entries[cid]
+            if case['blocked']:
+                assert entry['status']=='blocked' and entry['unresolved']
+                for table in ['datasets','jobs','ingest_sessions','events']:
+                    assert canonical([r for r in before[table] if r.get('campaign')==cid])==canonical([r for r in after[table] if r.get('campaign')==cid])
+                continue
+>           assert entry['status']=='recovered',entry
+E           AssertionError: {'campaign': '457aa371f3ff49939e4e401b5e1d015f', 'decisions': [{'action': 'preserved', 'decision': 44, 'run': '4a139dc...'action': 'preserved', 'dataset': '6e3d37b74f914ad0ac2f77fecfd8b316', 'run': '4a139dc4f8ea428fb361fbcc77facb30'}], ...}
+E           assert 'unaffected' == 'recovered'
+E             
+E             - recovered
+E             + unaffected
+
+test_16_recovery_evolution.py:30: AssertionError
+________________ test_recovery_history_semantics[unknown_codec] ________________
+
+client = <conftest.Client object at 0xffff92785480>, kind = 'unknown_codec'
+
+    @pytest.mark.parametrize('kind',['legacy','partial','mixed','unknown_codec'])
+>   def test_recovery_history_semantics(client,kind):verify(client,kind)
+                                                     ^^^^^^^^^^^^^^^^^^^
+
+test_16_recovery_evolution.py:49: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+client = <conftest.Client object at 0xffff92785480>, kind = 'unknown_codec'
+
+    def verify(client,kind):
+        before=setup(client);report=apply(client);entries={e['campaign']:e for e in report['studies']}
+        after=state(client.db);datasets={r['id']:r for r in after['datasets']};sessions={r['id']:r for r in after['ingest_sessions']};jobs={r['id']:r for r in after['jobs']}
+        for case in O['cases']:
+            if case['kind']!=kind:continue
+            cid=case['campaign'];entry=entries[cid]
+            if case['blocked']:
+>               assert entry['status']=='blocked' and entry['unresolved']
+E               AssertionError: assert ('unaffected' == 'blocked'
+E                 
+E                 - blocked
+E                 + unaffected)
+
+test_16_recovery_evolution.py:26: AssertionError
+___________ test_repeat_adopts_partial_progress_without_new_changes ____________
+
+client = <conftest.Client object at 0xffff927869e0>
+
+    def test_repeat_adopts_partial_progress_without_new_changes(client):
+        setup(client);first=apply(client);before=state(client.db)
+        repeat=command(client,backup=client.directory/'backup-repeat.db')
+        assert state(client.db)==before
+        selected={c['campaign'] for c in O['cases'] if not c['blocked']}
+>       assert all(e['status']=='already_recovered' for e in repeat['studies'] if e['campaign'] in selected)
+E       assert False
+E        +  where False = all(<generator object test_repeat_adopts_partial_progress_without_new_changes.<locals>.<genexpr> at 0xffff9179b9f0>)
+
+test_16_recovery_evolution.py:56: AssertionError
+=========================== short test summary info ============================
+FAILED test_16_recovery_evolution.py::test_recovery_history_semantics[legacy]
+FAILED test_16_recovery_evolution.py::test_recovery_history_semantics[partial]
+FAILED test_16_recovery_evolution.py::test_recovery_history_semantics[mixed]
+FAILED test_16_recovery_evolution.py::test_recovery_history_semantics[unknown_codec]
+FAILED test_16_recovery_evolution.py::test_repeat_adopts_partial_progress_without_new_changes
+5 failed, 3 passed in 7.75s

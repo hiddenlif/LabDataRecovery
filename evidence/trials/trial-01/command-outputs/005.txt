@@ -1,0 +1,657 @@
+"""Integrate reconstructed contents with legacy dispensing and plate eligibility."""
+from .calibration import reconcile
+from .transfer_history import histories
+
+
+def resolve(data):
+    evidence = histories(data)
+    if not evidence:
+        rows, excluded = reconcile(data['records'], data.get('telemetry', []))
+        return rows, excluded, []
+    binding = {b['record_id']:(h,b) for h in evidence for b in h['bindings']}
+    plates = {r['plate'] for r in data['records'] if r['id'] in binding}
+    legacy = [r for r in data['records'] if r['plate'] not in plates]
+    resolved, excluded = reconcile(legacy, data.get('telemetry', []))
+    for row in data['records']:
+        if row['plate'] not in plates:
+            continue
+        if row['role'] != 'sample':
+            resolved.append(dict(row)); continue
+        item = binding.get(row['id'])
+        if item is None:
+            reason = 'missing_transfer_binding'
+        else:
+            history, sample = item
+            reason = {'unknown':'unknown_transfer', 'empty':'empty_vessel', 'zero_dose':'zero_dose'}.get(sample['status'])
+        if reason:
+            excluded.append({'id':row['id'], 'reason':reason})
+        else:
+            resolved.append(dict(row, dose_um=sample['dose_um'], dose_source='transfer_history',
+                                 calibration_revision=None, transfer_binding=dict(sample, history_revision=history['revision'], campaign=history['campaign'])))
+    return sorted(resolved,key=lambda r:(r['plate'],r['well'])), excluded, evidence
+
+
+def measurement_key(data):
+    """Compare numerical projections only, never dataset or result identity."""
+    from .codec import digest
+    from .registry import normalize_input
+    normalized = normalize_input(data)
+    if normalized['kind'] != 'screening' or 'transfer_history' not in normalized:
+        return digest(data)
+    rows, excluded, evidence = resolve(normalized)
+    projected = [{k:v for k,v in row.items() if k not in {'transfer_binding','calibration_revision'}} for row in rows]
+    return digest({'kind':'screening', 'rows':projected, 'excluded':excluded,
+                   'calibration':normalized.get('calibration')})
+"""Durable source staging and atomic publication into ordinary study revisions."""
+import hashlib
+import re
+import uuid
+from .codec import require, text, integer, dumps, loads, digest
+from .database import initialize, transaction
+from .repository import get_campaign, event, now, store_dataset
+from .instrument_files import parse
+from .ingest_resolution import assemble
+from .errors import WorkbenchError, Conflict
+
+
+def manifest_contract(manifest):
+    require(manifest, ['delivery_id','expected_revision','sources'], 'manifest')
+    delivery = text(manifest['delivery_id'], 'delivery_id')
+    if delivery != manifest['delivery_id']:
+        raise WorkbenchError('delivery_id must be trimmed')
+    integer(manifest['expected_revision'], 'expected_revision')
+    if not isinstance(manifest['sources'], list) or not manifest['sources']:
+        raise WorkbenchError('sources must be a nonempty array')
+    seen = set()
+    for source in manifest['sources']:
+        require(source, ['id','kind','sha256'], 'source')
+        identifier = text(source['id'], 'source id')
+        if identifier != source['id'] or identifier in seen:
+            raise WorkbenchError('Source IDs must be unique and trimmed')
+        seen.add(identifier)
+        if source['kind'] not in {'readings','telemetry','transfer_history'}:
+            raise WorkbenchError('Source kind must be readings, telemetry or transfer_history')
+        if not isinstance(source['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', source['sha256']):
+            raise WorkbenchError('Source sha256 must be lowercase hexadecimal')
+    if not any(s['kind'] == 'readings' for s in manifest['sources']):
+        raise WorkbenchError('At least one readings source is required')
+    if sum(s['kind']=='transfer_history' for s in manifest['sources']) > 1:
+        raise WorkbenchError('A delivery accepts one complete transfer history source')
+    # Source list order has no semantic meaning; all other supplied fields remain bound.
+    return dict(manifest, sources=sorted(manifest['sources'], key=lambda s:s['id']))
+
+
+def session_row(db, identifier):
+    row = db.execute('SELECT * FROM ingest_sessions WHERE id=?', (identifier,)).fetchone()
+    if row is None:
+        raise WorkbenchError('Unknown ingestion session')
+    if digest(loads(row['manifest'])) != row['manifest_sha']:
+        raise Conflict('Stored manifest fingerprint mismatch')
+    return row
+
+
+def current_revision(db, campaign):
+    return db.execute('SELECT COALESCE(MAX(revision),0) FROM datasets WHERE campaign=?', (campaign,)).fetchone()[0]
+
+
+class Ingestion:
+    def __init__(self, path):
+        self.path = str(path)
+        initialize(path)
+
+    def open(self, campaign, manifest):
+        manifest = manifest_contract(manifest)
+        key = digest(manifest)
+        with transaction(self.path) as db:
+            if get_campaign(db, campaign)['kind'] != 'screening':
+                raise WorkbenchError('Instrument ingestion requires a screening campaign')
+            old = db.execute('SELECT * FROM ingest_sessions WHERE campaign=? AND delivery_key=?',
+                             (campaign, manifest['delivery_id'])).fetchone()
+            if old:
+                if old['manifest_sha'] != key:
+                    raise Conflict('Delivery identifier already binds another manifest')
+                return {'session':old['id'], 'state':old['state'], 'reused':True}
+            if current_revision(db, campaign) != manifest['expected_revision']:
+                raise Conflict('Campaign revision changed before opening the delivery')
+            identifier = uuid.uuid4().hex
+            db.execute('INSERT INTO ingest_sessions VALUES (?,?,?,?,?,?,?,NULL,?)',
+                       (identifier, campaign, manifest['delivery_id'], dumps(manifest), key,
+                        manifest['expected_revision'], 'open', now()))
+            for source in manifest['sources']:
+                db.execute("INSERT INTO ingest_sources(session,source_id,state,diagnostics) VALUES (?,?,'pending','[]')",
+                           (identifier, source['id']))
+            event(db, campaign, 'ingest_opened', {'session':identifier, 'manifest_sha256':key})
+            return {'session':identifier, 'state':'open', 'reused':False}
+
+    def add(self, identifier, source_id, raw):
+        if len(raw) > 20*1024*1024:
+            raise WorkbenchError('Source exceeds 20 MiB')
+        sha = hashlib.sha256(raw).hexdigest()
+        with transaction(self.path) as db:
+            session = session_row(db, identifier)
+            if session['state'] != 'open':
+                raise Conflict('Ingestion session is not open')
+            manifest = loads(session['manifest'])
+            spec = next((s for s in manifest['sources'] if s['id'] == source_id), None)
+            if spec is None:
+                raise WorkbenchError('Source is not declared in the manifest')
+            previous = db.execute('SELECT * FROM ingest_sources WHERE session=? AND source_id=?',
+                                  (identifier, source_id)).fetchone()
+            if previous['state'] == 'accepted':
+                if previous['sha'] != sha:
+                    raise Conflict('An accepted source cannot be replaced')
+                return {'source':source_id, 'state':'accepted', 'reused':True, 'diagnostics':[]}
+            if sha != spec['sha256']:
+                rows, errors = [], [{'line':0, 'error':'Source fingerprint differs from manifest'}]
+            else:
+                rows, errors = parse(raw, spec['kind'])
+            state = 'rejected' if errors else 'accepted'
+            db.execute('UPDATE ingest_sources SET state=?,raw=?,sha=?,parsed=?,diagnostics=? WHERE session=? AND source_id=?',
+                       (state, raw, sha, dumps(rows), dumps(errors), identifier, source_id))
+            db.execute('INSERT INTO ingest_attempts(session,source_id,sha,state,diagnostics) VALUES (?,?,?,?,?)',
+                       (identifier, source_id, sha, state, dumps(errors)))
+            return {'source':source_id, 'state':state, 'reused':False, 'rows':len(rows), 'diagnostics':errors}
+
+    def show(self, identifier):
+        with transaction(self.path) as db:
+            session = dict(session_row(db, identifier))
+            session['manifest'] = loads(session['manifest'])
+            sources = [dict(r) for r in db.execute('SELECT source_id,state,sha,diagnostics FROM ingest_sources WHERE session=? ORDER BY source_id', (identifier,))]
+            for source in sources:
+                source['diagnostics'] = loads(source['diagnostics'])
+            attempts = [dict(r) for r in db.execute('SELECT sequence,source_id,sha,state,diagnostics FROM ingest_attempts WHERE session=? ORDER BY sequence', (identifier,))]
+            for attempt in attempts:
+                attempt['diagnostics'] = loads(attempt['diagnostics'])
+            session.update(sources=sources, attempts=attempts)
+            return session
+
+    def preview(self, identifier):
+        with transaction(self.path) as db:
+            session = session_row(db, identifier)
+            if session['state'] == 'cancelled':
+                raise Conflict('Ingestion session was cancelled')
+            data = assemble(loads(session['manifest']), db.execute('SELECT * FROM ingest_sources WHERE session=?', (identifier,)).fetchall())
+            return {'session':identifier, 'input_sha256':digest(data), 'input':data,
+                    'base_current':current_revision(db, session['campaign']) == session['expected_revision']}
+
+    def publish(self, identifier):
+        with transaction(self.path) as db:
+            session = session_row(db, identifier)
+            if session['state'] == 'published':
+                dataset = db.execute('SELECT * FROM datasets WHERE id=?', (session['published_dataset'],)).fetchone()
+                return {'dataset':dataset['id'], 'revision':dataset['revision'], 'sha256':dataset['sha'], 'reused':True}
+            if session['state'] != 'open':
+                raise Conflict('Ingestion session is not open')
+            if current_revision(db, session['campaign']) != session['expected_revision']:
+                raise Conflict('Campaign advanced; open a delivery against the current revision')
+            data = assemble(loads(session['manifest']), db.execute('SELECT * FROM ingest_sources WHERE session=?', (identifier,)).fetchall())
+            result = store_dataset(db, session['campaign'], data)
+            db.execute("UPDATE ingest_sessions SET state='published',published_dataset=? WHERE id=?", (result['dataset'], identifier))
+            event(db, session['campaign'], 'ingest_published', {'session':identifier, 'dataset':result['dataset']})
+            return result
+
+    def cancel(self, identifier):
+        with transaction(self.path) as db:
+            session = session_row(db, identifier)
+            if session['state'] == 'published':
+                raise Conflict('Published evidence cannot be cancelled')
+            if session['state'] != 'cancelled':
+                db.execute("UPDATE ingest_sessions SET state='cancelled' WHERE id=?", (identifier,))
+                event(db, session['campaign'], 'ingest_cancelled', {'session':identifier})
+            return {'session':identifier, 'state':'cancelled'}
+"""SQLite transaction boundaries and additive schema migrations."""
+from contextlib import contextmanager
+from pathlib import Path
+import sqlite3
+
+MIGRATIONS = [
+    """
+    CREATE TABLE campaigns(id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, created TEXT NOT NULL);
+    CREATE TABLE datasets(id TEXT PRIMARY KEY, campaign TEXT NOT NULL REFERENCES campaigns(id),
+      revision INTEGER NOT NULL, sha TEXT NOT NULL, content TEXT NOT NULL, created TEXT NOT NULL,
+      UNIQUE(campaign, revision));
+    CREATE TABLE runs(id TEXT PRIMARY KEY, campaign TEXT NOT NULL REFERENCES campaigns(id),
+      dataset TEXT NOT NULL REFERENCES datasets(id), policy_sha TEXT NOT NULL, policy TEXT NOT NULL,
+      engine TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('running','complete','failed')),
+      result TEXT, error TEXT, created TEXT NOT NULL, finished TEXT,
+      UNIQUE(campaign,dataset,policy_sha,engine));
+    CREATE TABLE decisions(id INTEGER PRIMARY KEY AUTOINCREMENT, campaign TEXT NOT NULL REFERENCES campaigns(id),
+      run TEXT NOT NULL REFERENCES runs(id), action TEXT NOT NULL, reviewer TEXT NOT NULL,
+      note TEXT NOT NULL, created TEXT NOT NULL);
+    """,
+    """
+    CREATE TABLE events(id INTEGER PRIMARY KEY AUTOINCREMENT, campaign TEXT NOT NULL REFERENCES campaigns(id),
+      action TEXT NOT NULL, payload TEXT NOT NULL, created TEXT NOT NULL);
+    CREATE INDEX datasets_campaign_revision ON datasets(campaign,revision);
+    CREATE INDEX decisions_campaign_id ON decisions(campaign,id);
+    CREATE INDEX events_campaign_id ON events(campaign,id);
+    """,
+    """
+    CREATE TABLE jobs(id TEXT PRIMARY KEY, campaign TEXT NOT NULL REFERENCES campaigns(id),
+      dataset TEXT NOT NULL REFERENCES datasets(id), policy_sha TEXT NOT NULL, policy TEXT NOT NULL,
+      engine TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('queued','running','complete')),
+      generation INTEGER NOT NULL DEFAULT 0, token TEXT, lease_until REAL,
+      staged TEXT, published_run TEXT REFERENCES runs(id),
+      UNIQUE(campaign,dataset,policy_sha,engine));
+    CREATE TABLE job_attempts(job TEXT NOT NULL REFERENCES jobs(id), generation INTEGER NOT NULL,
+      worker TEXT NOT NULL, token TEXT NOT NULL, started REAL NOT NULL, ended REAL,
+      state TEXT NOT NULL CHECK(state IN ('running','expired','complete')),
+      PRIMARY KEY(job,generation));
+    """,
+    """
+    CREATE TABLE ingest_sessions(id TEXT PRIMARY KEY, campaign TEXT NOT NULL REFERENCES campaigns(id),
+      delivery_key TEXT NOT NULL, manifest TEXT NOT NULL, manifest_sha TEXT NOT NULL,
+      expected_revision INTEGER NOT NULL, state TEXT NOT NULL CHECK(state IN ('open','published','cancelled')),
+      published_dataset TEXT REFERENCES datasets(id), created TEXT NOT NULL, UNIQUE(campaign,delivery_key));
+    CREATE TABLE ingest_sources(session TEXT NOT NULL REFERENCES ingest_sessions(id), source_id TEXT NOT NULL,
+      state TEXT NOT NULL CHECK(state IN ('pending','accepted','rejected')), raw BLOB, sha TEXT, parsed TEXT,
+      diagnostics TEXT NOT NULL, PRIMARY KEY(session,source_id));
+    CREATE TABLE ingest_attempts(sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+      session TEXT NOT NULL, source_id TEXT NOT NULL, sha TEXT NOT NULL, state TEXT NOT NULL,
+      diagnostics TEXT NOT NULL, FOREIGN KEY(session,source_id) REFERENCES ingest_sources(session,source_id));
+    """,
+]
+
+
+def connect(path):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(str(path), timeout=30, isolation_level=None)
+    db.row_factory = sqlite3.Row
+    db.execute("PRAGMA foreign_keys=ON")
+    db.execute("PRAGMA busy_timeout=30000")
+    return db
+
+
+def initialize(path):
+    with transaction(path) as db:
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        if version > len(MIGRATIONS):
+            raise ValueError("Database was written by a newer application")
+        for i, migration in enumerate(MIGRATIONS[version:], start=version + 1):
+            for statement in migration.split(";"):
+                if statement.strip():
+                    db.execute(statement)
+            db.execute(f"PRAGMA user_version={i}")
+
+
+@contextmanager
+def transaction(path):
+    db = connect(path)
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        yield db
+        db.commit()
+    except BaseException:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+"""Analysis dispatch is shared by the CLI, campaign store and exported reports."""
+from .schema import validate
+from .policy import resolve
+from .codec import digest
+from . import ENGINE_VERSION
+
+
+def analyze(data, policy=None):
+    input_sha = digest(data)
+    from .registry import normalize_input
+    data = normalize_input(data)
+    validate(data)
+    settings = resolve(data["kind"], policy)
+    from . import screening, bridge, stability, counts
+    module = {"screening": screening, "bridge": bridge, "stability": stability, "rare_events": counts}[data["kind"]]
+    result = module.analyze(data, settings)
+    return {"kind": data["kind"], "engine_version": ENGINE_VERSION, "input_sha256": input_sha,
+            "policy_sha256": digest(settings), "policy": settings, "result": result}
+
+"""Evidence identity across revisions, workers, review and portable reports."""
+from copy import deepcopy
+import csv
+import hashlib
+import io
+from pathlib import Path
+import shutil
+import sqlite3
+
+import pytest
+
+from truegate.codec import digest, dumps, load, loads
+from truegate.engine import analyze
+from truegate.errors import Conflict, WorkbenchError
+from truegate.ingestion import Ingestion
+from truegate.instrument_files import HEADERS
+from truegate.jobs import Jobs
+from truegate.reporting import export, verify
+from truegate.repository import Repository
+
+
+def evidence():
+    records = [dict(id=f'{role}-{i}', plate='P', well=f'{role}-{i}',
+                    assay='primary', role=role, signal=signal + i)
+               for role, signal in [('vehicle', 10000), ('positive', 100)]
+               for i in range(3)]
+    records += [dict(id=key, plate='P', well=key, assay='primary', role='sample',
+                     signal=signal, compound='X', dose=0, dose_unit='uM')
+                for key, signal in [('early', 6000), ('late', 4500)]]
+    return {'kind': 'screening', 'records': records, 'transfer_history': {
+        'revision': 'original',
+        'vessels': [dict(id=key, volume=vol, volume_unit='uL',
+                         concentrations=contents, concentration_unit='uM')
+                    for key, vol, contents in [('stock', 96, {'X': 73}),
+                                               ('well', 0, {}), ('aliquot', 0, {})]],
+        'events': [dict(id=key, revision=1, sequence=seq, source=src,
+                        destination=dst, status='ok', volume=vol, volume_unit='uL')
+                   for key, seq, src, dst, vol in [('load', 1, 'stock', 'well', 24),
+                                                  ('take', 2, 'well', 'aliquot', 9)]],
+        'bindings': [dict(record_id=key, vessel=vessel, sequence=seq)
+                     for key, vessel, seq in [('early', 'well', 1), ('late', 'aliquot', 2)]]}}
+
+
+def correction(data):
+    changed = deepcopy(data)
+    history = changed['transfer_history']
+    history['revision'] = 'corrected'
+    history['events'].insert(0, dict(history['events'][0], revision=2, volume=12))
+    return changed
+
+
+def envelope(data, campaign):
+    if not campaign:
+        return data
+    return {'kind': 'screening', 'campaigns': [dict(
+        id='local-study', entities=[dict(local_id='X', type='sequence', value='ACD', target='T')],
+        records=data['records'], transfer_history=data['transfer_history'])]}
+
+
+def observations(analysis):
+    return [o for compound in analysis['result']['compounds']
+            for channel in compound['channels'].values() for o in channel['observations']]
+
+
+@pytest.mark.parametrize('campaign_input', [False, True])
+@pytest.mark.parametrize('change', ['volume', 'revision', 'order', 'unused_contents'])
+def test_changed_evidence_requires_new_review(tmp_path, campaign_input, change):
+    original = evidence()
+    changed = deepcopy(original)
+    history = changed['transfer_history']
+    if change == 'volume':
+        changed = correction(original)
+    elif change == 'revision':
+        history['events'][0]['revision'] = 7
+    elif change == 'order':
+        history['events'].reverse()
+    else:
+        history['vessels'].append(dict(id='unused', volume=11, volume_unit='uL',
+                                       concentrations={'X': 3}, concentration_unit='uM'))
+    original, changed = (envelope(d, campaign_input) for d in (original, changed))
+    repo = Repository(tmp_path / 'study.db')
+    campaign = repo.create('Correction', 'screening')['campaign']
+    first = repo.import_data(campaign, original)
+    run = repo.run(campaign)['run']
+    repo.review(campaign, run, 'accept', 'Reviewer', 'Inspected original', 1)
+    before = repo.snapshot(campaign, run)
+    assert observations(before['analysis'])
+    assert repo.import_data(campaign, deepcopy(original))['reused']
+    assert repo.show(campaign)['current_review']['run'] == run
+
+    second = repo.import_data(campaign, changed)
+    assert second['revision'] == 2 and not second['reused']
+    assert second['sha256'] == digest(changed) != first['sha256']
+    assert repo.show(campaign)['current_review'] is None
+    with pytest.raises(Conflict):
+        repo.review(campaign, run, 'accept', 'Reviewer', 'Stale run', 2)
+    new = repo.run(campaign)
+    assert [o['dose_um'] for o in observations(new['analysis'])] == pytest.approx([73, 73])
+    repo.review(campaign, new['run'], 'hold', 'Reviewer', 'Inspect correction', 2)
+    assert repo.import_data(campaign, changed)['reused']
+    assert repo.show(campaign)['current_review']['action'] == 'hold'
+    assert len(repo.show(campaign)['decisions']) == 2
+
+    historical = repo.snapshot(campaign, run)
+    assert historical == dict(before, superseded=True)
+    for name, snap in [('before', before), ('historical', historical)]:
+        export(snap, tmp_path / name)
+        assert verify(tmp_path / name)['verified']
+        assert load(tmp_path / name / 'snapshot.json') == snap
+    for filename in ['summary.csv', 'transfer-bindings.csv']:
+        assert (tmp_path / 'before' / filename).read_bytes() == (tmp_path / 'historical' / filename).read_bytes()
+    # Reverting evidence is another revision, not a return to an accepted dataset.
+    assert repo.import_data(campaign, original)['revision'] == 3
+    assert repo.show(campaign)['current_review'] is None
+
+
+@pytest.mark.parametrize('compute_before', [False, True])
+@pytest.mark.parametrize('existing_run', [False, True])
+@pytest.mark.parametrize('campaign_input', [False, True])
+def test_jobs_keep_submitted_evidence_and_publication_is_idempotent(
+        tmp_path, compute_before, existing_run, campaign_input):
+    path = tmp_path / 'jobs.db'
+    repo, jobs = Repository(path), Jobs(path)
+    campaign = repo.create('Pinned work', 'screening')['campaign']
+    original = envelope(evidence(), campaign_input)
+    repo.import_data(campaign, original)
+    prior_run = repo.run(campaign)['run'] if existing_run else None
+    job = jobs.submit(campaign)['job']
+    assert jobs.submit(campaign) == {'job': job, 'reused': True}
+    token = jobs.claim(job, 'worker', 300)['token']
+    if compute_before:
+        jobs.compute(job, token)
+    repo.import_data(campaign, envelope(correction(evidence()), campaign_input))
+    current_run = repo.run(campaign)['run']
+    review = repo.review(campaign, current_run, 'accept', 'Reviewer', 'Correction inspected', 2)
+    assert jobs.submit(campaign)['job'] != job
+    if not compute_before:
+        Jobs(path).compute(job, token)
+    published = Jobs(path).publish(job, token)
+    if existing_run:
+        assert published['run'] == prior_run and published['reused']
+    snap = Repository(path).snapshot(campaign, published['run'])
+    assert snap['input'] == original and snap['analysis'] == analyze(original)
+    assert snap['superseded'] and snap['review'] is None
+    state = repo.show(campaign)
+    assert state['current_review']['id'] == review['decision']
+    assert jobs.publish(job, token)['run'] == published['run']
+    assert repo.show(campaign) == state
+    with pytest.raises(Conflict):
+        jobs.publish(job, 'another-token')
+    with pytest.raises(Conflict):
+        repo.review(campaign, published['run'], 'accept', 'Reviewer', 'Old work', 2)
+
+
+def test_supplied_database_preserves_complete_runs_and_reuses_old_run(tmp_path, monkeypatch):
+    incident = Path(__file__).resolve().parents[1] / 'examples' / 'correction-incident'
+    ids = load(incident / 'identifiers.json')
+    path = tmp_path / 'existing.db'
+    shutil.copyfile(incident / 'study.db', path)
+    repo, jobs = Repository(path), Jobs(path)
+    before = repo.show(ids['campaign'])
+    with sqlite3.connect(path) as db:
+        stored = {run: loads(db.execute('SELECT result FROM runs WHERE id=?', (run,)).fetchone()[0])
+                  for run in [ids['previous_run'], ids['current_run']]}
+    # Historical reads must work without running the current engine at all.
+    with monkeypatch.context() as patch:
+        def unexpected_analysis(*args, **kwargs):
+            pytest.fail('Snapshot recomputed a completed run')
+        patch.setattr('truegate.engine.analyze', unexpected_analysis)
+        for run, result in stored.items():
+            snap = repo.snapshot(ids['campaign'], run)
+            assert snap['analysis'] == result
+            export(snap, tmp_path / run)
+            assert verify(tmp_path / run)['verified']
+    token = jobs.claim(ids['queued_job'], 'worker', 300)['token']
+    jobs.compute(ids['queued_job'], token)
+    published = jobs.publish(ids['queued_job'], token)
+    assert published['run'] == ids['previous_run'] and published['reused']
+    assert repo.show(ids['campaign'])['current_review'] == before['current_review']
+
+
+def stage(ingest, campaign, data, delivery, revision, suffix=b''):
+    stream = io.StringIO(newline='')
+    writer = csv.DictWriter(stream, fieldnames=HEADERS['readings'])
+    writer.writeheader()
+    writer.writerows(dict(r, revision=1) for r in data['records'])
+    sources = {'readings': stream.getvalue().encode(),
+               'transfer_history': dumps(data['transfer_history']).encode() + suffix}
+    manifest = {'delivery_id': delivery, 'expected_revision': revision, 'sources': [
+        dict(id=kind, kind=kind, sha256=hashlib.sha256(raw).hexdigest())
+        for kind, raw in sources.items()]}
+    session = ingest.open(campaign, manifest)['session']
+    states = {kind: ingest.add(session, kind, raw) for kind, raw in reversed(list(sources.items()))}
+    return session, states
+
+
+def test_instrument_publication_binds_exact_bytes_and_rejects_unmatched_samples(tmp_path):
+    path = tmp_path / 'ingest.db'
+    repo, ingest = Repository(path), Ingestion(path)
+    campaign = repo.create('Instrument corrections', 'screening')['campaign']
+    original = evidence()
+    session, _ = stage(ingest, campaign, original, 'initial', 0)
+    assert ingest.publish(session)['revision'] == 1
+    run = repo.run(campaign)['run']
+    repo.review(campaign, run, 'accept', 'Reviewer', 'Initial delivery', 1)
+    before = repo.snapshot(campaign, run)
+    state = repo.show(campaign)
+    invalid = correction(original)
+    invalid['transfer_history']['bindings'][0]['record_id'] = 'absent-reading'
+    session, states = stage(ingest, campaign, invalid, 'unmatched', 1)
+    assert all(s['state'] == 'accepted' for s in states.values())
+    for operation in [ingest.preview, ingest.publish]:
+        with pytest.raises(WorkbenchError, match='existing sample'):
+            operation(session)
+    after = repo.show(campaign)
+    assert after['datasets'] == state['datasets'] and after['current_review'] == state['current_review']
+    assert ingest.show(session)['state'] == 'open'
+
+    session, _ = stage(ingest, campaign, correction(original), 'legal', 1)
+    assert ingest.publish(session)['revision'] == 2
+    assert repo.show(campaign)['current_review'] is None
+    run2 = repo.run(campaign)['run']
+    repo.review(campaign, run2, 'accept', 'Reviewer', 'Legal correction', 2)
+    # Identical parsed values with different original bytes are new evidence too.
+    session, _ = stage(ingest, campaign, correction(original), 'reformatted', 2, b'\n  ')
+    preview = ingest.preview(session)
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE ingest_sources SET parsed='[]' WHERE session=?", (session,))
+    assert ingest.preview(session) == preview
+    assert ingest.publish(session)['revision'] == 3
+    assert ingest.publish(session)['reused']
+    assert repo.show(campaign)['current_review'] is None
+    assert repo.snapshot(campaign, run) == dict(before, superseded=True)
+    source = next(s for s in preview['input']['ingestion']['sources'] if s['kind'] == 'transfer_history')
+    assert source['text'].endswith('\n  ')
+
+
+def test_resolving_unknown_volume_cannot_clip_later_withdrawal(tmp_path):
+    path = tmp_path / 'physical.db'
+    repo, ingest = Repository(path), Ingestion(path)
+    campaign = repo.create('Unknown delivery', 'screening')['campaign']
+    original = evidence()
+    event = original['transfer_history']['events'][0]
+    event['status'] = 'unknown'
+    del event['volume'], event['volume_unit']
+    repo.import_data(campaign, original)
+    run = repo.run(campaign)['run']
+    repo.review(campaign, run, 'hold', 'Reviewer', 'Await measured volume', 1)
+    before = repo.show(campaign)
+    invalid = deepcopy(original)
+    invalid['transfer_history']['events'].append(dict(event, revision=2, status='ok', volume=8, volume_unit='uL'))
+    with pytest.raises(WorkbenchError, match='overdraws'):
+        repo.import_data(campaign, invalid)
+    assert repo.show(campaign) == before
+    session, states = stage(ingest, campaign, invalid, 'invalid', 1)
+    assert states['transfer_history']['state'] == 'rejected'
+    assert 'overdraws' in states['transfer_history']['diagnostics'][0]['error']
+    with pytest.raises(Conflict):
+        ingest.publish(session)
+    assert repo.show(campaign)['current_review'] == before['current_review']
+    legal = deepcopy(invalid)
+    legal['transfer_history']['events'][-1]['volume'] = 9
+    session, states = stage(ingest, campaign, legal, 'legal', 1)
+    assert all(s['state'] == 'accepted' for s in states.values())
+    assert ingest.publish(session)['revision'] == 2
+    assert repo.show(campaign)['current_review'] is None
+    result = repo.run(campaign)['analysis']
+    assert [o['dose_um'] for o in observations(result)] == pytest.approx([73, 73])
+
+
+def test_expired_worker_cannot_publish_after_correction(tmp_path, monkeypatch):
+    path = tmp_path / 'leases.db'
+    repo, jobs = Repository(path), Jobs(path)
+    campaign = repo.create('Lease fencing', 'screening')['campaign']
+    original = evidence()
+    repo.import_data(campaign, original)
+    job = jobs.submit(campaign)['job']
+    monkeypatch.setattr('truegate.jobs.time.time', lambda: 1000)
+    first = jobs.claim(job, 'first', 10)
+    jobs.compute(job, first['token'])
+    repo.import_data(campaign, correction(original))
+    monkeypatch.setattr('truegate.jobs.time.time', lambda: 1011)
+    second = jobs.claim(job, 'replacement', 10)
+    assert second['generation'] == first['generation'] + 1
+    for operation in [jobs.compute, jobs.publish, jobs.heartbeat]:
+        with pytest.raises(Conflict):
+            operation(job, first['token'])
+    with pytest.raises(Conflict, match='Compute'):
+        jobs.publish(job, second['token'])
+    jobs.compute(job, second['token'])
+    result = jobs.publish(job, second['token'])
+    assert repo.snapshot(campaign, result['run'])['analysis'] == analyze(original)
+    monkeypatch.setattr('truegate.jobs.time.time', lambda: 2000)
+    assert jobs.publish(job, second['token'])['run'] == result['run']
+# Retained screening incident
+
+Synthetic retained studies, deliveries, waiting work and historical results. Work on copies. Run `PYTHONPATH=src python examples/recovery-incident/check_consistency.py COPY.db` for partial read-only diagnostics. Inspect unresolved evidence rather than treating it as a successful repair.
+"""Inspect retained evidence and waiting-work consistency on a database copy.
+
+Run: PYTHONPATH=src python examples/recovery-incident/check_consistency.py COPY.db
+Read-only diagnostics; incomplete coverage, not an acceptance oracle.
+"""
+import json, sqlite3, sys
+from truegate.codec import loads, digest
+from truegate.ingest_resolution import assemble
+
+def inspect(path):
+    violations=[];unresolved=[]
+    with sqlite3.connect('file:'+str(path)+'?mode=ro',uri=True) as db:
+        db.row_factory=sqlite3.Row
+        for campaign, in db.execute('SELECT id FROM campaigns ORDER BY id'):
+            events=[dict(r) for r in db.execute('SELECT * FROM events WHERE campaign=? ORDER BY id',(campaign,))]
+            deliveries=[];local=[]
+            try:
+                publications=[e['id'] for e in events if e['action']=='ingest_published']
+                if publications and any(e['action']=='imported' and e['id']>max(publications) for e in events):
+                    raise ValueError('Later direct input requires review')
+                for e in events:
+                    if e['action']!='ingest_published':continue
+                    sid=loads(e['payload'])['session']
+                    session=db.execute('SELECT * FROM ingest_sessions WHERE id=?',(sid,)).fetchone()
+                    manifest=loads(session['manifest'])
+                    sources=[dict(r) for r in db.execute('SELECT * FROM ingest_sources WHERE session=?',(sid,))]
+                    content=assemble(manifest,sources)
+                    for descriptor in manifest['sources']:
+                        if descriptor['kind']=='transfer_history':
+                            model=loads(bytes(next(s for s in sources if s['source_id']==descriptor['id'])['raw']).decode('utf-8-sig'))
+                            codec=descriptor.get('codec','transfer-history/2')
+                            if codec=='transfer-history/1':
+                                for binding in model['bindings']:binding['sequence']-=1
+                            elif codec!='transfer-history/2':raise ValueError('Unsupported retained format')
+                            content['transfer_history']=model
+                    sha=digest(content)
+                    linked=db.execute('SELECT sha FROM datasets WHERE id=?',(session['published_dataset'],)).fetchone()
+                    deliveries.append((e['id'],sid,sha))
+                    if linked is None or linked['sha']!=sha:local.append(dict(campaign=campaign,session=sid,check='retained-input-binding'))
+                for job in db.execute("SELECT * FROM jobs WHERE campaign=? AND state='queued'",(campaign,)):
+                    submitted=[e for e in events if e['action']=='job_submitted' and loads(e['payload']).get('job')==job['id']]
+                    if len(submitted)!=1:raise ValueError('Ambiguous submission context')
+                    prior=[d for d in deliveries if d[0]<submitted[0]['id']]
+                    if prior:
+                        row=db.execute('SELECT sha FROM datasets WHERE id=?',(job['dataset'],)).fetchone()
+                        if not row or row['sha']!=prior[-1][2]:local.append(dict(campaign=campaign,job=job['id'],check='waiting-input-context'))
+                violations.extend(local)
+            except Exception as exc:
+                unresolved.append(dict(campaign=campaign,error=str(exc)))
+    return dict(violations=violations,unresolved=unresolved,scope='Partial read-only consistency diagnostics; unresolved evidence requires review')
+if __name__=='__main__':
+    report=inspect(sys.argv[1]);print(json.dumps(report,indent=2));sys.exit(bool(report['violations']))

@@ -1,0 +1,23 @@
+{
+  "directory": "/workspace/recovery-report",
+  "status_counts": {
+    "blocked": 10,
+    "recovered": 18,
+    "unaffected": 12
+  },
+  "preserved": {
+    "runs": 40,
+    "decisions": 40,
+    "job_attempts": 100,
+    "ingest_sources": 160,
+    "ingest_attempts": 160,
+    "datasets": {
+      "original": 58,
+      "appended": 20
+    },
+    "events": {
+      "original": 616,
+      "appended": 18
+    }
+  }
+}

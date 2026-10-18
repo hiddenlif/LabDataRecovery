@@ -1,0 +1,202 @@
+"""Explicit study assumptions. Defaults are demonstration settings, not release specifications."""
+from copy import deepcopy
+from .codec import number, integer, text
+from .errors import WorkbenchError
+
+DEFAULTS = {
+    "screening": {"min_zprime": 0.4, "min_doses": 6, "max_ic50_um": 8.0,
+                  "nuisance_margin": 4.0, "max_fit_rmse": 12.0, "uncertainty_confidence": 0.95},
+    "bridge": {"reference": "reference", "candidate": "candidate", "min_donors": 6,
+               "equivalence_low": 0.8, "equivalence_high": 1.25,
+               "confidence": 0.90, "bootstrap_samples": 1000, "seed": 1729},
+    "stability": {"limit": 70.0, "confidence": 0.95, "max_time_h": 72.0,
+                  "max_extrapolation": 1.5, "min_times": 3},
+    "rare_events": {"confidence": 0.95, "max_relative_error": 0.35,
+                    "max_cv": 0.25, "min_replicates": 3},
+}
+
+
+def resolve(kind, updates=None):
+    if updates is not None and not isinstance(updates, dict):
+        raise WorkbenchError("policy must be an object")
+    p = deepcopy(DEFAULTS[kind])
+    unknown = set(updates or {}) - p.keys()
+    if unknown:
+        raise WorkbenchError(f"Unknown policy fields: {', '.join(sorted(unknown))}")
+    p.update(updates or {})
+    for k, v in p.items():
+        if k in {"reference", "candidate"}:
+            text(v, k)
+        else:
+            number(v, k)
+    if "confidence" in p and not 0.5 < p["confidence"] < 1:
+        raise WorkbenchError("confidence must lie strictly between 0.5 and 1")
+    for k in {"min_doses", "min_donors", "min_times", "min_replicates"} & p.keys():
+        integer(p[k], k, 3)
+    if kind == "screening":
+        if not 0.5 < p["uncertainty_confidence"] < 1:
+            raise WorkbenchError("uncertainty_confidence must lie strictly between 0.5 and 1")
+        number(p["min_zprime"], "min_zprime", -10, 1)
+        for k in ["max_ic50_um", "nuisance_margin", "max_fit_rmse"]:
+            number(p[k], k, 1e-10)
+    if kind == "bridge":
+        integer(p["bootstrap_samples"], "bootstrap_samples", 200)
+        if p["bootstrap_samples"] > 20000:
+            raise WorkbenchError("bootstrap_samples cannot exceed 20000")
+        integer(p["seed"], "seed", 0)
+        if not 0 < p["equivalence_low"] < 1 < p["equivalence_high"]:
+            raise WorkbenchError("Equivalence bounds must straddle 1")
+        if p["reference"] == p["candidate"]:
+            raise WorkbenchError("Reference and candidate methods must differ")
+    if kind == "stability":
+        number(p["max_time_h"], "max_time_h", 0)
+        number(p["max_extrapolation"], "max_extrapolation", 1, 3)
+    if kind == "rare_events":
+        number(p["max_relative_error"], "max_relative_error", 0, 1)
+        number(p["max_cv"], "max_cv", 0, 1)
+    return p
+
+"""Command-line interface. Standard output contains one JSON object."""
+import argparse
+from pathlib import Path
+import sys
+import sqlite3
+from .codec import load, dumps
+from .errors import WorkbenchError
+
+
+def parser():
+    p = argparse.ArgumentParser(prog="truegate", description="Scientific analysis and review workbench")
+    sub = p.add_subparsers(dest="command", required=True)
+    a = sub.add_parser("analyze", help="Analyze a dataset without creating a campaign")
+    a.add_argument("input"); a.add_argument("--policy"); a.add_argument("--output")
+    a = sub.add_parser("transfer-preview", help="Reconstruct physical transfers without importing")
+    a.add_argument("input")
+    a = sub.add_parser("demo", help="Generate synthetic example studies")
+    a.add_argument("directory")
+    a = sub.add_parser("create", help="Create a campaign")
+    a.add_argument("--db", required=True); a.add_argument("--name", required=True); a.add_argument("--kind", required=True)
+    for command in ["import", "run", "review", "show", "export"]:
+        a = sub.add_parser(command)
+        a.add_argument("--db", required=True); a.add_argument("--campaign", required=True)
+        if command == "import":
+            a.add_argument("input")
+        if command == "run":
+            a.add_argument("--policy")
+        if command == "review":
+            for name in ["run", "action", "reviewer", "note"]:
+                a.add_argument("--" + name, required=True)
+            a.add_argument("--revision", type=int, required=True)
+        if command == "export":
+            a.add_argument("--run", required=True); a.add_argument("--directory", required=True)
+    a = sub.add_parser("evidence-recover", help="Recover suppressed delivery revisions")
+    a.add_argument("--db", required=True); a.add_argument("--dry-run", action="store_true"); a.add_argument("--backup")
+    a = sub.add_parser("verify-report")
+    a.add_argument("directory")
+    a = sub.add_parser("job-submit", help="Pin an analysis job to the current input revision")
+    a.add_argument("--db", required=True); a.add_argument("--campaign", required=True); a.add_argument("--policy")
+    for command in ["job-claim", "job-heartbeat", "job-compute", "job-publish"]:
+        a = sub.add_parser(command)
+        a.add_argument("--db", required=True); a.add_argument("--job", required=True)
+        if command == "job-claim":
+            a.add_argument("--worker", required=True)
+        else:
+            a.add_argument("--token", required=True)
+        if command in {"job-claim", "job-heartbeat"}:
+            a.add_argument("--lease-seconds", type=float, default=60)
+    a = sub.add_parser("ingest-open")
+    a.add_argument("--db", required=True); a.add_argument("--campaign", required=True); a.add_argument("manifest")
+    for command in ["ingest-add", "ingest-show", "ingest-preview", "ingest-publish", "ingest-cancel"]:
+        a = sub.add_parser(command)
+        a.add_argument("--db", required=True); a.add_argument("--session", required=True)
+        if command == "ingest-add":
+            a.add_argument("--source", required=True); a.add_argument("input")
+    return p
+
+
+def execute(args):
+    if args.command == "evidence-recover":
+        from .recovery import recover
+        return recover(args.db, args.dry_run, args.backup)
+    if args.command.startswith("ingest-"):
+        from .ingestion import Ingestion
+        ingestion = Ingestion(args.db)
+        if args.command == "ingest-open":
+            return ingestion.open(args.campaign, load(args.manifest))
+        if args.command == "ingest-add":
+            with Path(args.input).open("rb") as stream:
+                raw = stream.read(20*1024*1024 + 1)
+            return ingestion.add(args.session, args.source, raw)
+        return getattr(ingestion, args.command.removeprefix("ingest-"))(args.session)
+    if args.command.startswith("job-"):
+        from .jobs import Jobs
+        jobs = Jobs(args.db)
+        if args.command == "job-submit":
+            return jobs.submit(args.campaign, load(args.policy) if args.policy else None)
+        if args.command == "job-claim":
+            return jobs.claim(args.job, args.worker, args.lease_seconds)
+        if args.command == "job-heartbeat":
+            return jobs.heartbeat(args.job, args.token, args.lease_seconds)
+        return getattr(jobs, args.command.removeprefix("job-"))(args.job, args.token)
+    if args.command == "transfer-preview":
+        from .registry import normalize_input
+        from .schema import validate
+-rw-r--r-- 1 501 dialout 1.5M Oct 18 20:49 examples/recovery-incident/study.db
+"""Regression coverage for durable delivery publication."""
+import csv
+import hashlib
+import io
+import sqlite3
+import pytest
+from truegate.examples import screening
+from truegate.ingestion import Ingestion
+from truegate.instrument_files import HEADERS
+from truegate.repository import Repository
+from truegate.errors import Conflict
+
+
+def staged(tmp_path):
+    path=tmp_path/'studies.db';repo=Repository(path);campaign=repo.create('Plate delivery','screening')['campaign']
+    data=screening();sources={}
+    for kind,rows in [('readings',[dict(r,revision=1) for r in data['records']]),('telemetry',data['telemetry'])]:
+        stream=io.StringIO(newline='');writer=csv.DictWriter(stream,fieldnames=HEADERS[kind]);writer.writeheader();writer.writerows(rows)
+        sources[kind]=stream.getvalue().encode()
+    manifest={'delivery_id':'plate-delivery','expected_revision':0,'sources':[
+        {'id':kind,'kind':kind,'sha256':hashlib.sha256(raw).hexdigest()} for kind,raw in sources.items()]}
+    ingest=Ingestion(path);session=ingest.open(campaign,manifest)['session']
+    return path,repo,campaign,ingest,session,sources
+
+
+def test_incomplete_delivery_survives_reopen_and_duplicate_add(tmp_path):
+    path,repo,campaign,ingest,session,sources=staged(tmp_path)
+    assert ingest.add(session,'readings',b'truncated')['state']=='rejected'
+    ingest.add(session,'readings',sources['readings'])
+    with pytest.raises(Conflict):ingest.publish(session)
+    resumed=Ingestion(path)
+    assert resumed.add(session,'readings',sources['readings'])['reused']
+    assert len(resumed.show(session)['attempts'])==2
+    resumed.add(session,'telemetry',sources['telemetry'])
+    publication=resumed.publish(session)
+    assert resumed.publish(session)['dataset']==publication['dataset']
+    assert len(repo.show(campaign)['datasets'])==1
+
+
+def test_failed_session_transition_rolls_back_dataset_and_events(tmp_path):
+    path,repo,campaign,ingest,session,sources=staged(tmp_path)
+    for kind,raw in sources.items():ingest.add(session,kind,raw)
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TRIGGER stop_publish BEFORE UPDATE ON ingest_sessions WHEN NEW.state='published' BEGIN SELECT RAISE(ABORT,'interrupted'); END")
+    with pytest.raises(sqlite3.IntegrityError):ingest.publish(session)
+    state=repo.show(campaign)
+    assert state['datasets']==[]
+    assert not any(e['action'] in {'imported','ingest_published'} for e in state['events'])
+    with sqlite3.connect(path) as db:db.execute('DROP TRIGGER stop_publish')
+    assert ingest.publish(session)['revision']==1
+
+
+def test_parsed_cache_is_not_the_evidence_source(tmp_path):
+    path,repo,campaign,ingest,session,sources=staged(tmp_path)
+    for kind,raw in sources.items():ingest.add(session,kind,raw)
+    before=ingest.preview(session)
+    with sqlite3.connect(path) as db:db.execute("UPDATE ingest_sources SET parsed='[]'")
+    assert ingest.preview(session)==before

@@ -1,0 +1,553 @@
+{
+  "trial-01": {
+    "expected_runs": 40,
+    "reported_runs": 18,
+    "expected_decisions": 40,
+    "reported_decisions": 18,
+    "missing": [
+      {
+        "campaign": "0a70e2995cec4829a4e30b94153521f6",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "115de33b245042faa8ee3bd3ddb289bd",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "18777fb11c3f4161ad5b9b159867dde8",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "1f64804114744328927e1c1d45bf79cf",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "259c706e496b477788c07d033e47b317",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "43ec12493fa34353b1a7276d6740de0d",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "4dc65f0f4ef246309cf36050cb388321",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "58290152294649b08ac38eb3537050ab",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "64115012877742ae94a4dbaf4b105af3",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "6c9b34b96363425cb44be867950c6957",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "7c3164c9b2fa462a9b030d8369eb78e5",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "847bb0d350e34d3bbda83e19b668628d",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "88c454cf4e314193922389580cd44766",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "9987f376d3f544f3a1dd4e6ee7b25dc5",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "a9f225a576ce44bdad197d5d2c05fb51",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "adb3f2a9c2934256a060ca7d6fa2b4fc",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "b72b611d310c4e5a953fed8cc6b7a326",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "bcb3bde4b7094c45a3862313b27b30e7",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "beaa73e1c20e4e0a90c40771f6bdf013",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "e3f589589e8d4a53af162c3b8d5409b0",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "eb03974e42154e12a901dc8fbfaca3d3",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "f082fa4fc4844a3ebff5d737204dbfc1",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      }
+    ]
+  },
+  "trial-02": {
+    "expected_runs": 40,
+    "reported_runs": 40,
+    "expected_decisions": 40,
+    "reported_decisions": 40,
+    "missing": []
+  },
+  "trial-03": {
+    "expected_runs": 40,
+    "reported_runs": 18,
+    "expected_decisions": 40,
+    "reported_decisions": 18,
+    "missing": [
+      {
+        "campaign": "0a70e2995cec4829a4e30b94153521f6",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "115de33b245042faa8ee3bd3ddb289bd",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "18777fb11c3f4161ad5b9b159867dde8",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "1f64804114744328927e1c1d45bf79cf",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "259c706e496b477788c07d033e47b317",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "43ec12493fa34353b1a7276d6740de0d",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "4dc65f0f4ef246309cf36050cb388321",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "58290152294649b08ac38eb3537050ab",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "64115012877742ae94a4dbaf4b105af3",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "6c9b34b96363425cb44be867950c6957",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "7c3164c9b2fa462a9b030d8369eb78e5",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "847bb0d350e34d3bbda83e19b668628d",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "88c454cf4e314193922389580cd44766",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "9987f376d3f544f3a1dd4e6ee7b25dc5",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "a9f225a576ce44bdad197d5d2c05fb51",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "adb3f2a9c2934256a060ca7d6fa2b4fc",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "b72b611d310c4e5a953fed8cc6b7a326",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "bcb3bde4b7094c45a3862313b27b30e7",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "beaa73e1c20e4e0a90c40771f6bdf013",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "e3f589589e8d4a53af162c3b8d5409b0",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "eb03974e42154e12a901dc8fbfaca3d3",
+        "status": "unaffected",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      },
+      {
+        "campaign": "f082fa4fc4844a3ebff5d737204dbfc1",
+        "status": "blocked",
+        "expected": {
+          "runs": 1,
+          "decisions": 1
+        },
+        "reported": {
+          "runs": 0,
+          "decisions": 0
+        }
+      }
+    ]
+  }
+}

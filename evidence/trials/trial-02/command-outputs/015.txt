@@ -1,0 +1,148 @@
+28K	recovery-artifacts/apply.json
+1.5M	recovery-artifacts/backup.db
+28K	recovery-artifacts/preview.json
+28K	recovery-artifacts/repeat.json
+1.6M	recovery-artifacts/study.db
+{
+  "transfer-history/1": {
+    "binding_sequence": "next operation boundary, exclusive; canonical snapshot sequence is boundary minus one"
+  },
+  "transfer-history/2": {
+    "binding_sequence": "completed operation boundary, inclusive"
+  },
+  "default": "transfer-history/2",
+  "selection": "source descriptor codec; preserve original bytes and manifest; normalized histories use inclusive snapshots"
+}
+"""Command-line interface. Standard output contains one JSON object."""
+import argparse
+from pathlib import Path
+import sys
+import sqlite3
+from .codec import load, dumps
+from .errors import WorkbenchError
+
+
+def parser():
+    p = argparse.ArgumentParser(prog="truegate", description="Scientific analysis and review workbench")
+    sub = p.add_subparsers(dest="command", required=True)
+    a = sub.add_parser("analyze", help="Analyze a dataset without creating a campaign")
+    a.add_argument("input"); a.add_argument("--policy"); a.add_argument("--output")
+    a = sub.add_parser("transfer-preview", help="Reconstruct physical transfers without importing")
+    a.add_argument("input")
+    a = sub.add_parser("demo", help="Generate synthetic example studies")
+    a.add_argument("directory")
+    a = sub.add_parser("create", help="Create a campaign")
+    a.add_argument("--db", required=True); a.add_argument("--name", required=True); a.add_argument("--kind", required=True)
+    for command in ["import", "run", "review", "show", "export"]:
+        a = sub.add_parser(command)
+        a.add_argument("--db", required=True); a.add_argument("--campaign", required=True)
+        if command == "import":
+            a.add_argument("input")
+        if command == "run":
+            a.add_argument("--policy")
+        if command == "review":
+            for name in ["run", "action", "reviewer", "note"]:
+                a.add_argument("--" + name, required=True)
+            a.add_argument("--revision", type=int, required=True)
+        if command == "export":
+            a.add_argument("--run", required=True); a.add_argument("--directory", required=True)
+    a = sub.add_parser("evidence-recover", help="Recover suppressed delivery revisions")
+    a.add_argument("--db", required=True); a.add_argument("--dry-run", action="store_true"); a.add_argument("--backup")
+    a = sub.add_parser("verify-report")
+    a.add_argument("directory")
+    a = sub.add_parser("job-submit", help="Pin an analysis job to the current input revision")
+    a.add_argument("--db", required=True); a.add_argument("--campaign", required=True); a.add_argument("--policy")
+    for command in ["job-claim", "job-heartbeat", "job-compute", "job-publish"]:
+        a = sub.add_parser(command)
+        a.add_argument("--db", required=True); a.add_argument("--job", required=True)
+        if command == "job-claim":
+            a.add_argument("--worker", required=True)
+        else:
+            a.add_argument("--token", required=True)
+        if command in {"job-claim", "job-heartbeat"}:
+            a.add_argument("--lease-seconds", type=float, default=60)
+    a = sub.add_parser("ingest-open")
+    a.add_argument("--db", required=True); a.add_argument("--campaign", required=True); a.add_argument("manifest")
+    for command in ["ingest-add", "ingest-show", "ingest-preview", "ingest-publish", "ingest-cancel"]:
+        a = sub.add_parser(command)
+        a.add_argument("--db", required=True); a.add_argument("--session", required=True)
+        if command == "ingest-add":
+            a.add_argument("--source", required=True); a.add_argument("input")
+    return p
+
+
+def execute(args):
+    if args.command == "evidence-recover":
+        from .recovery import recover
+        return recover(args.db, args.dry_run, args.backup)
+    if args.command.startswith("ingest-"):
+        from .ingestion import Ingestion
+        ingestion = Ingestion(args.db)
+        if args.command == "ingest-open":
+            return ingestion.open(args.campaign, load(args.manifest))
+        if args.command == "ingest-add":
+            with Path(args.input).open("rb") as stream:
+                raw = stream.read(20*1024*1024 + 1)
+            return ingestion.add(args.session, args.source, raw)
+        return getattr(ingestion, args.command.removeprefix("ingest-"))(args.session)
+    if args.command.startswith("job-"):
+        from .jobs import Jobs
+        jobs = Jobs(args.db)
+        if args.command == "job-submit":
+            return jobs.submit(args.campaign, load(args.policy) if args.policy else None)
+        if args.command == "job-claim":
+            return jobs.claim(args.job, args.worker, args.lease_seconds)
+        if args.command == "job-heartbeat":
+            return jobs.heartbeat(args.job, args.token, args.lease_seconds)
+        return getattr(jobs, args.command.removeprefix("job-"))(args.job, args.token)
+    if args.command == "transfer-preview":
+        from .registry import normalize_input
+        from .schema import validate
+        from .transfer_history import histories
+        data = normalize_input(load(args.input))
+        validate(data)
+        return {"histories":histories(data)}
+    if args.command == "analyze":
+        from .engine import analyze
+        result = analyze(load(args.input), load(args.policy) if args.policy else None)
+        if args.output:
+            Path(args.output).write_text(dumps(result) + "\n")
+        return result
+    if args.command == "demo":
+        from .examples import write
+        return write(args.directory)
+    if args.command == "verify-report":
+        from .reporting import verify
+        return verify(args.directory)
+    from .repository import Repository
+    repo = Repository(args.db)
+    if args.command == "create":
+        return repo.create(args.name, args.kind)
+    if args.command == "import":
+        return repo.import_data(args.campaign, load(args.input))
+    if args.command == "run":
+        return repo.run(args.campaign, load(args.policy) if args.policy else None)
+    if args.command == "review":
+        return repo.review(args.campaign, args.run, args.action, args.reviewer, args.note, args.revision)
+    if args.command == "show":
+        return repo.show(args.campaign)
+    if args.command == "export":
+        from .reporting import export
+        return export(repo.snapshot(args.campaign, args.run), args.directory)
+    raise WorkbenchError("Unknown command")
+
+
+def main():
+    args = parser().parse_args()
+    try:
+        result = execute(args)
+        print(dumps(result))
+        return 0
+    except (WorkbenchError, OSError, ValueError, KeyError, sqlite3.Error) as exc:
+        print(dumps({"error": str(exc)}), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+

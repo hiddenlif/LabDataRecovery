@@ -1,0 +1,13 @@
+# Evidence recovery interface
+
+Use copies of supplied evidence. `truegate evidence-recover --db study.db --dry-run` returns a JSON plan without writing to the database or creating a backup. Apply uses `--backup /absolute/new/backup.db`; the destination must not exist or alias the input. Take an independently readable, consistent SQLite backup before mutation. Serialize against writers. An unexpected failure rolls back the whole apply.
+
+Keep full evidence identity, scientifically meaningful transfer bindings, and every distinct report row. Repair the live workflow and reconcile durably retained deliveries with stored studies. Work that has already produced a result keeps its inputs. Queued work must use the evidence available when it was submitted. A later valid publication remains current when older evidence is reconstructed. Allocated revision numbers remain monotonic concurrency tokens; they need not describe the age of the evidence.
+
+Retained bytes, their integrity records and durable publication history are evidence. Derived caches can be stale. Recovery must neither invent missing provenance nor undo valid progress made by an earlier recovery. Preserve existing dataset content, source bytes, events, attempts, runs and review decisions. Admit a study only if its evidence determines a unique safe result and resulting job keys remain valid; otherwise report it as blocked without partially changing it. Unrelated valid studies can proceed.
+
+The supported command emits `version: transfer-evidence-v1`, `mode: dry_run|apply`, `backup` (null for dry-run), and `studies`. Each study entry includes `campaign`, `status` (`unaffected`, `recoverable`, `recovered`, `already_recovered`, `blocked`), `sessions`, `jobs`, `runs`, `decisions`, and `unresolved`. Session mappings have `session`, `from_dataset`, `to_dataset`, `revision`, `sha256`; job mappings have `job`, `from_dataset`, `to_dataset`. Preserve runs as `run`, `dataset`, `action: preserved`, and decisions as `decision`, `run`, `action: preserved`. Additional fields are allowed. Blocked and unaffected entries have empty changes. Reasons are explanatory, not fixed wording.
+
+Commit a durable `transfer_evidence_recovered_v1` event for each reconciled study. Repeated runs retain its mappings and report `already_recovered` without duplicate datasets, moves or events. A no-change apply still needs a new backup. Preview reserves no IDs; preview and apply must agree semantically on unchanged input.
+
+`examples/recovery-incident/check_consistency.py` supplies a partial operational check. It is not a complete acceptance suite. Finish with `RECOVERY-NOTES.md` describing causes, validation, affected records and unresolved evidence. Reports must agree with execution.

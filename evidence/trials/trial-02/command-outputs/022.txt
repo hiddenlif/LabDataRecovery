@@ -1,0 +1,135 @@
+
+def get_campaign(db, campaign):
+    row = db.execute("SELECT * FROM campaigns WHERE id=?", (campaign,)).fetchone()
+    if row is None:
+        raise WorkbenchError("Unknown campaign")
+    return row
+
+
+def latest_dataset(db, campaign):
+    row = db.execute("SELECT * FROM datasets WHERE campaign=? ORDER BY revision DESC LIMIT 1", (campaign,)).fetchone()
+    # Recovery appends historical evidence without making it the current input.
+    for recorded in db.execute("SELECT action,payload FROM events WHERE campaign=? AND action IN ('imported','transfer_evidence_recovered_v1') ORDER BY id DESC", (campaign,)):
+        payload = loads(recorded['payload'])
+        selected = payload.get('current_dataset') if recorded['action'] == 'transfer_evidence_recovered_v1' else payload.get('dataset')
+        if selected:
+            row = db.execute("SELECT * FROM datasets WHERE campaign=? AND id=?", (campaign, selected)).fetchone()
+            break
+    if row is None:
+        raise WorkbenchError("Campaign has no dataset")
+    return row
+
+
+def store_dataset(db, campaign, data):
+    from .registry import normalize_input
+    validate(normalize_input(data))
+    sha = digest(data)
+    study = get_campaign(db, campaign)
+    if study["kind"] != data["kind"]:
+        raise WorkbenchError("Dataset kind differs from campaign")
+    latest = db.execute("SELECT * FROM datasets WHERE campaign=? ORDER BY revision DESC LIMIT 1", (campaign,)).fetchone()
+    current = latest_dataset(db, campaign) if latest else None
+    if current and current["sha"] == sha:
+        return {"dataset": current["id"], "revision": current["revision"], "sha256": current["sha"], "reused": True}
+    revision = latest["revision"] + 1 if latest else 1
+    identifier = uuid.uuid4().hex
+    db.execute("INSERT INTO datasets VALUES (?,?,?,?,?,?)", (identifier, campaign, revision, sha, dumps(data), now()))
+    event(db, campaign, "imported", {"dataset": identifier, "revision": revision, "sha256": sha})
+    return {"dataset": identifier, "revision": revision, "sha256": sha, "reused": False}
+
+
+class Repository:
+    def __init__(self, path):
+        self.path = str(path)
+        initialize(self.path)
+
+    def create(self, name, kind):
+        name = text(name, "campaign name")
+        if kind not in KINDS:
+            raise WorkbenchError("Unknown study kind")
+        campaign = uuid.uuid4().hex
+        with transaction(self.path) as db:
+            db.execute("INSERT INTO campaigns VALUES (?,?,?,?)", (campaign, name, kind, now()))
+            event(db, campaign, "created", {"kind": kind})
+        return {"campaign": campaign, "name": name, "kind": kind}
+
+    def import_data(self, campaign, data):
+        with transaction(self.path) as db:
+            return store_dataset(db, campaign, data)
+
+    for e in journal:
+        p = e['payload']
+        if e['action'] == 'imported':
+            current = recorded = p['dataset']
+        elif e['action'] == 'ingest_published':
+            recorded = p['dataset']; current = targets[p['session']]
+        elif e['action'] == ACTION:
+            if p.get('current_dataset'):
+                require(p['current_dataset'] in datasets, 'Recovery current dataset is absent')
+                require(p['current_dataset'] == current, 'Recovery current input disagrees with publication order')
+                current = recorded = p['current_dataset']
+        elif e['action'] == 'job_submitted' and p['job'] in jobs:
+            job = jobs[p['job']]
+            if job['state'] == 'queued':
+                require(current is not None and p['dataset'] == recorded,
+                        'Submission disagrees with publication context: ' + job['id'])
+                desired[job['id']] = current
+    require(current is not None, 'No unambiguous current input')
+    final_keys = set()
+    for jid, job in jobs.items():
+        target = job['dataset']
+        if job['state'] == 'queued':
+            require(len(submissions.get(jid, [])) == 1, 'Missing or ambiguous queued submission: ' + jid)
+            require(job['dataset'] == job_paths[jid], 'Unexplained queued job pointer: ' + jid)
+            require(job['staged'] is None and job['published_run'] is None, 'Queued job already has a result: ' + jid)
+            require(digest(loads(job['policy'])) == job['policy_sha'], 'Job policy fingerprint mismatch: ' + jid)
+            target = desired[jid]
+            if target != job['dataset']:
+                entry['jobs'].append(dict(job=jid, from_dataset=job['dataset'], to_dataset=target))
+        key = (target, job['policy_sha'], job['engine'])
+        require(key not in final_keys, 'Recovery would collide with an existing job key')
+        final_keys.add(key)
+    entry['_additions'] = additions
+    if entry['sessions'] or entry['jobs']:
+        entry.update(status='recoverable', current_dataset=current, version=VERSION)
+    elif completed:
+        # Keep the durable mappings visible on repeat, even after workers finish
+        # their recovered jobs or an ordinary import advances the current study.
+        entry.update({k: v for k, v in completed[-1]['payload'].items()
+                      if k in ('sessions', 'jobs', 'current_dataset', 'version')})
+        entry['status'] = 'already_recovered'
+
+
+def plan(db):
+    studies = []
+    for campaign in rows(db, 'SELECT id FROM campaigns ORDER BY id'):
+        cid = campaign['id']
+        entry = dict(campaign=cid, status='unaffected', sessions=[], jobs=[],
+                     runs=[dict(run=r['id'], dataset=r['dataset'], action='preserved') for r in rows(db, 'SELECT id,dataset FROM runs WHERE campaign=? ORDER BY id', (cid,))],
+                     decisions=[dict(decision=d['id'], run=d['run'], action='preserved') for d in rows(db, 'SELECT id,run FROM decisions WHERE campaign=? ORDER BY id', (cid,))], unresolved=[])
+        try:
+            audit(db, entry)
+        except (WorkbenchError, KeyError, TypeError, ValueError, IndexError, OverflowError) as exc:
+            entry = {k: v for k, v in entry.items() if not k.startswith('_')}
+            entry.update(status='blocked', sessions=[], jobs=[], unresolved=[dict(reason=str(exc))])
+        studies.append(entry)
+    return studies
+
+
+def public(studies, mode, backup=None):
+    return dict(version=VERSION, mode=mode, backup=str(backup) if backup else None,
+                studies=[{k: v for k, v in entry.items() if not k.startswith('_')} for entry in studies])
+
+
+def recover(path, dry_run=False, backup=None):
+    path = Path(path).resolve()
+    if not path.is_file():
+        raise WorkbenchError('An existing database is required')
+    db = sqlite3.connect(path.as_uri() + '?mode=' + ('ro' if dry_run else 'rw'), uri=True, isolation_level=None, timeout=30)
+    db.row_factory = sqlite3.Row
+    try:
+        db.execute('PRAGMA foreign_keys=ON')
+        db.execute('BEGIN' if dry_run else 'BEGIN IMMEDIATE')
+        studies = plan(db)
+        if dry_run:
+            db.rollback()
