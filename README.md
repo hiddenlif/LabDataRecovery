@@ -113,7 +113,7 @@ See [engineering and scientific decisions](ENGINEERING.md) for the assay context
 - `evidence/`: actual receipts, extracted commands and outputs, source states and untouched solver final payloads in verified archives, with reviewable source patches.
 - `tools/`: public-workspace export, reproducible build, public testing and file verification.
 
-The repository is private and contains author answers. Prepare a public-only workspace before an isolated solver run. Do not give a solver access to the repository root.
+This portfolio repository includes author reference answers and grading fixtures for reproducibility. Prepare a solver-only workspace before an isolated evaluation run; the candidate must not receive the reference or verifier materials.
 
 ## CI and troubleshooting
 
