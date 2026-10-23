@@ -1,0 +1,10 @@
+id,plate,well,revision,assay,role,signal,compound,dose,dose_unit
+vehicle-0,readout,vehicle0,1,primary,vehicle,9998,,,
+vehicle-1,readout,vehicle1,1,primary,vehicle,10000,,,
+vehicle-2,readout,vehicle2,1,primary,vehicle,10002,,,
+positive-0,readout,positive0,1,primary,positive,198,,,
+positive-1,readout,positive1,1,primary,positive,200,,,
+positive-2,readout,positive2,1,primary,positive,202,,,
+early,readout,A1,1,primary,sample,6000,X,0,uM
+late,readout,A2,1,primary,sample,5500,X,0,uM
+downstream,readout,A3,1,primary,sample,5000,X,0,uM

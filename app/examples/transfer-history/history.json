@@ -1,0 +1,87 @@
+{
+  "revision": "delivery-A",
+  "vessels": [
+    {
+      "id": "stock",
+      "volume": 100,
+      "volume_unit": "uL",
+      "concentrations": {
+        "X": 1000
+      },
+      "concentration_unit": "uM"
+    },
+    {
+      "id": "mix",
+      "volume": 90,
+      "volume_unit": "uL",
+      "concentrations": {},
+      "concentration_unit": "uM"
+    },
+    {
+      "id": "assay",
+      "volume": 80,
+      "volume_unit": "uL",
+      "concentrations": {},
+      "concentration_unit": "uM"
+    }
+  ],
+  "events": [
+    {
+      "id": "add-1",
+      "revision": 1,
+      "sequence": 1,
+      "source": "stock",
+      "destination": "mix",
+      "status": "partial",
+      "volume": 5,
+      "volume_unit": "uL"
+    },
+    {
+      "id": "add-2",
+      "revision": 1,
+      "sequence": 2,
+      "source": "stock",
+      "destination": "mix",
+      "status": "ok",
+      "volume": 5,
+      "volume_unit": "uL"
+    },
+    {
+      "id": "dilute",
+      "revision": 1,
+      "sequence": 3,
+      "source": "mix",
+      "destination": "assay",
+      "status": "ok",
+      "volume": 20,
+      "volume_unit": "uL"
+    },
+    {
+      "id": "late-addition",
+      "revision": 1,
+      "sequence": 4,
+      "source": "stock",
+      "destination": "mix",
+      "status": "ok",
+      "volume": 10,
+      "volume_unit": "uL"
+    }
+  ],
+  "bindings": [
+    {
+      "record_id": "early",
+      "vessel": "mix",
+      "sequence": 1
+    },
+    {
+      "record_id": "late",
+      "vessel": "mix",
+      "sequence": 2
+    },
+    {
+      "record_id": "downstream",
+      "vessel": "assay",
+      "sequence": 3
+    }
+  ]
+}
