@@ -1,4 +1,4 @@
-# Lab data recovery
+# AI Evaluation Task: Laboratory Data Recovery
 
 Repair a Python/SQLite research application so that corrected evidence, queued analyses, historical reports and recovery from incomplete migrations all agree.
 
